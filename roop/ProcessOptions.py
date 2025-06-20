@@ -1,7 +1,21 @@
 class ProcessOptions:
-
-    def __init__(self, swap_model, processordefines:dict, face_distance,  blend_ratio, swap_mode, selected_index, masking_text, imagemask, num_steps, subsample_size, show_face_area, restore_original_mouth, show_mask=False):
-        if swap_model is not None: 
+    def __init__(
+        self,
+        swap_model,
+        processordefines: dict,
+        face_distance,
+        blend_ratio,
+        swap_mode,
+        selected_index,
+        masking_text,
+        imagemask,
+        num_steps,
+        subsample_size,
+        show_face_area,
+        restore_original_mouth,
+        show_mask=False,
+    ):
+        if swap_model is not None:
             self.swap_modelname = swap_model
             self.swap_output_size = int(swap_model.split()[-1])
         else:

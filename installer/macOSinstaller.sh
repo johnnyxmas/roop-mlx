@@ -55,7 +55,7 @@ else
 fi
 
 # Clone the repository
-REPO_URL="https://github.com/C0untFloyd/roop-unleashed.git"
+REPO_URL="https://codeberg.org/roop-unleashed/roop-unleashed.git"
 REPO_NAME="roop-unleashed"
 
 echo "Cloning the repository $REPO_URL..."

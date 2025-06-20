@@ -1,12 +1,12 @@
----
-title: roop-floyd
-app_file: run.py
-sdk: gradio
-sdk_version: 4.4.1
----
-# roop-floyd
+# roop-unleashed
 
-The Original Count Floyd Addition to ROOP saved for posterity
+This is **unofficial** mirror of repository
+
+Models: <https://codeberg.org/roop-unleashed/models>
+
+[Changelog](#changelog) • [Usage](#usage)
+
+Uncensored Deepfakes for images and videos without training and an easy-to-use GUI.
 
 ### Features
 
@@ -24,7 +24,6 @@ The Original Count Floyd Addition to ROOP saved for posterity
 
 and lots more...
 
-
 ## Disclaimer
 
 This project is for technical and academic use only.
@@ -34,33 +33,199 @@ Users of this software are expected to use this software responsibly while abidi
 In the event of violation of the legal and ethical requirements of the user's country or region, this code repository is exempt from liability
 
 ### Installation
-Google Colab by
-1. download roop-floyd.iypnb
 
-Local Machine
+Please refer to the [wiki](https://github.com/C0untFloyd/roop-unleashed/wiki).
 
-0. git clone https://codeberg.org/Cognibuild/ROOP-FLOYD/
-1. cd ROOP-FLOYD
-2. python -m venv venv && call venv/scripts/activate
-3. (FOR NVIDIA) conda install -c nvidia cudatoolkit=11.8 -y
-3. (FOR AMD) pip install onnxruntime-directml
-4. pip install -r requirementspip install onnxruntime-directml.txt
-5. pip install --upgrade gradio --force
-6. pip install --upgrade fastapi pydantic
-7. pip install "numpy<2.0" 
-8. python run.py
+#### macOS Installation
 
-NOTE: This installation assumes a proper installation of your system. Including python, miniconda, git, ffmpeg, VSBuildTools2019
+Simply run the following command. It will check and install all dependencies if necessary.
 
- *A free system checker can be found here*: https://www.patreon.com/posts/automated-system-117200313
-
-*An AI System Setup Script can be acquired here*: https://www.patreon.com/posts/117210030
-
+`/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/PJF16/roop-unleashed/master/installer/macOSinstaller.sh)"`
 
 ### Usage
 
-- Windows: Activate the virtual environment and run python run.py
+- Windows: run the `windows_run.bat` from the Installer.
+- Linux: `python run.py`
+- macOS: `sh runMacOS.sh`
+- Dockerfile:
 
+  ```shell
+  docker build -t roop-unleashed . && docker run -t \
+    -p 7860:7860 \
+    -v ./config.yaml:/app/config.yaml \
+    -v ./models:/app/models \
+    -v ./temp:/app/temp \
+    -v ./output:/app/output \
+    roop-unleashed
+  ```
 
-  
+Additional commandline arguments are currently unsupported and settings should be done via the UI.
 
+> Note: When you run this program for the first time, it will download some models roughly ~2Gb in size.
+
+### Changelog
+
+**03.01.2025** v4.4.1
+
+Bugfix: Extras Tab
+Bugfix: Preview Mask
+Bugfix: DMDNet working on Cuda only
+Updated Colab Script to also install CUDNN
+
+**31.12.2024** v4.4.0 Hotfix
+
+Bugfix: Updated Colab to use present Cuda Drivers
+Bugfix: Live-Cam not working because of new face swapper
+Set default swapping model back to Insightface
+
+Happy New Year!
+
+**30.12.2024** v4.4.0
+
+- Added random face selection mode
+- Added alternative face swapping model with 128px & 256 px output ([ReSwapper](https://github.com/somanchiu/ReSwapper/tree/main))
+- Video repair added to Extras Tab
+- Updated most packages to newer versions. CUDA >= 12.4 now required!
+- Several minor bugfixes and QoL Changes
+
+**28.9.2024** v4.3.1
+
+- Bugfix: Several possible memory leaks
+- Added different output modes, e.g. to virtual cam stream
+- New swapping mode "All input faces"
+- Average total fps displayed and setting for autorun
+
+**16.9.2024** v4.2.8
+
+- Bugfix: Starting roop-unleashed without NVIDIA gpu but cuda option enabled
+- Bugfix: Target Faces couldn't be moved left/right
+- Bugfix: Enhancement and upscaling working again in virtual cam
+- Corrupt videos caught when adding to target files, displaying warning msg
+- Source Files Component cleared after face detection to release temp files
+- Added masking and mouth restore options to virtual cam
+
+**9.9.2024** v4.2.3
+
+- Hotfix for gradio pydantic issue with fastapi
+- Upgraded to Gradio 4.43 hoping it will fix remaining issues
+- Added new action when no face detected -> use last swapped
+- Specified image format for image controls - opening new tabs on preview images possible again!
+- Hardcoded image output format for livecam to jpeg - might be faster than previous webp
+- Chain events to be only executed if previous was a success
+
+**5.9.2024** v4.2.0
+
+- Added ability to move input & target faces order
+- New CLI Arguments override settings
+- Small UI changes to faceswapping tab
+- Added mask option and code for restoration of original mouth area
+- Updated gradio to v4.42.0
+- Added CLI Arguments --server_share and --cuda_device_id
+- Added webp image support
+
+**15.07.2024** v4.1.1
+
+- Bugfix: Post-processing after swapping
+
+**14.07.2024** v4.1.0
+
+- Added subsample upscaling to increase swap resolution
+- Upgraded gradio
+
+**12.05.2024** v4.0.0
+
+- Bugfix: Unnecessary init every frame in live-cam
+- Bugfix: Installer downloading insightface package each run
+- Added xseg masking to live-cam
+- Added realesrganx2 to frame processors
+- Upgraded some requirements
+- Added subtypes and different model support to frame processors
+- Allow frame processors to change resolutions of videos
+- Different OpenCV Cap for MacOS Virtual Cam
+- Added complete frame processing to extras tab
+- Colorize, upscale and misc filters added
+
+**22.04.2024** v3.9.0
+
+- Bugfix: Face detection bounding box corrupt values at weird angles
+- Rewrote mask previewing to work with every model
+- Switching mask engines toggles text interactivity
+- Clearing target files, resets face selection dropdown
+- Massive rewrite of swapping architecture, needed for xseg implementation
+- Added DFL Xseg Support for partial face occlusion
+- Face masking only runs when there is a face detected
+- Removed unnecessary toggle checkbox for text masking
+
+**22.03.2024** v3.6.5
+
+- Bugfix: Installer pulling latest update on first installation
+- Bugfix: Regression issue, blurring/erosion missing from face swap
+- Exposed erosion and blur amounts to UI
+- Using same values for manual masking too
+
+**20.03.2024** v3.6.3
+
+- Bugfix: Workaround for Gradio Slider Change Bug
+- Bugfix: CSS Styling to fix Gradio Image Height Bug
+- Made face swapping mask offsets resolution independant
+- Show offset mask as overlay
+- Changed layout for masking
+
+**18.03.2024** v3.6.0
+
+- Updated to Gradio 4.21.0 - requiring many changes under the hood
+- New manual masking (draw the mask yourself)
+- Extras Tab, streamlined cutting/joining videos
+- Re-added face selection by gender (on-demand loading, default turned off)
+- Removed unnecessary activate live-cam option
+- Added time info to preview frame and changed frame slider event to allow faster changes
+
+**10.03.2024** v3.5.5
+
+- Bugfix: Installer Path Env
+- Bugfix: file attributes
+- Video processing checks for presence of ffmpeg and displays warning if not found
+- Removed gender + age detection to speed up processing. Option removed from UI
+- Replaced restoreformer with restoreformer++
+- Live Cam recoded to run separate from virtual cam and without blocking controls
+- Swapping with only 1 target face allows selecting from several input faces
+
+**08.01.2024** v3.5.0
+
+- Bugfix: wrong access options when creating folders
+- New auto rotation of horizontal faces, fixing bad landmark positions (expanded on PR 364)
+- Simple VR Option for stereo Images/Movies, best used in selected face mode
+- Added RestoreFormer Enhancer - https://github.com/wzhouxiff/RestoreFormer
+- Bumped up package versions for onnx/Torch etc.
+
+**16.10.2023** v3.3.4
+
+**11.8.2023** v2.7.0
+
+Initial Gradio Version - old TkInter Version now deprecated
+
+- Re-added unified padding to face enhancers
+- Fixed DMDNet for all resolutions
+- Selecting target face now automatically switches swapping mode to selected
+- GPU providers are correctly set using the GUI (needs restart currently)
+- Local output folder can be opened from page
+- Unfinished extras functions disabled for now
+- Installer checks out specific commit, allowing to go back to first install
+- Updated readme for new gradio version
+- Updated Colab
+
+# Acknowledgements
+
+Lots of ideas, code or pre-trained models borrowed from the following projects:
+
+https://github.com/deepinsight/insightface<br/>
+https://github.com/s0md3v/roop<br/>
+https://github.com/AUTOMATIC1111/stable-diffusion-webui<br/> 
+https://github.com/Hillobar/Rope<br/>
+https://github.com/TencentARC/GFPGAN<br/>
+https://github.com/kadirnar/codeformer-pip<br/>
+https://github.com/csxmli2016/DMDNet<br/>
+https://github.com/glucauze/sd-webui-faceswaplab<br/>
+https://github.com/ykk648/face_power<br/>
+
+Thanks to all developers!

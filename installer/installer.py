@@ -21,7 +21,7 @@ def check_env():
     if conda_not_exist:
         print("Conda is not installed. Exiting...")
         sys.exit()
-    
+
     # Ensure this is a new environment and not the base environment
     if os.environ["CONDA_DEFAULT_ENV"] == "base":
         print("Create an environment for this project and activate it. Exiting...")
@@ -33,19 +33,18 @@ def install_dependencies():
 
     # Install Git and clone repo
     run_cmd("conda install -y -k git")
-    run_cmd("git clone https://github.com/C0untFloyd/roop-unleashed.git")
+    run_cmd("git clone https://codeberg.org/roop-unleashed/roop-unleashed.git")
     os.chdir(MY_PATH)
-    run_cmd("git checkout 5bfafdc97a0c47b46ec83e6530a57399aaad75d7")
+    run_cmd("git checkout main")
     # Installs dependencies from requirements.txt
     run_cmd("python -m pip install -r requirements.txt")
 
 
-
 def update_dependencies():
     global MY_PATH
-    
+
     os.chdir(MY_PATH)
-	# do a hard reset for to update even if there are local changes
+    # do a hard reset for to update even if there are local changes
     run_cmd("git fetch --all")
     run_cmd("git reset --hard origin/main")
     run_cmd("git pull")
@@ -55,21 +54,20 @@ def update_dependencies():
 
 def start_app():
     global MY_PATH
-    
+
     os.chdir(MY_PATH)
     # forward commandline arguments
     sys.argv.pop(0)
-    args = ' '.join(sys.argv)
+    args = " ".join(sys.argv)
     print("Launching App")
-    run_cmd(f'python run.py {args}')
+    run_cmd(f"python run.py {args}")
 
 
 if __name__ == "__main__":
     global MY_PATH
-    
+
     MY_PATH = "roop-unleashed"
 
-    
     # Verifies we are in a conda environment
     check_env()
 
@@ -80,7 +78,7 @@ if __name__ == "__main__":
         # moved update from batch to here, because of batch limitations
         updatechoice = input("Check for Updates? [y/n]").lower()
         if updatechoice == "y":
-           update_dependencies()
+            update_dependencies()
 
     # Run the model with webui
     os.chdir(script_dir)

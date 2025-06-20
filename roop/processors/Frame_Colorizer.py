@@ -1,4 +1,4 @@
-import cv2 
+import cv2
 import numpy as np
 import onnxruntime
 import roop.globals
@@ -6,35 +6,44 @@ import roop.globals
 from roop.utilities import resolve_relative_path
 from roop.typing import Frame
 
-class Frame_Colorizer():
-    plugin_options:dict = None
+
+class Frame_Colorizer:
+    plugin_options: dict = None
     model_colorizer = None
     devicename = None
     prev_type = None
 
-    processorname = 'deoldify'
-    type = 'frame_colorizer'
-    
+    processorname = "deoldify"
+    type = "frame_colorizer"
 
-    def Initialize(self, plugin_options:dict):
+    def Initialize(self, plugin_options: dict):
         if self.plugin_options is not None:
             if self.plugin_options["devicename"] != plugin_options["devicename"]:
                 self.Release()
 
         self.plugin_options = plugin_options
-        if self.prev_type is not None and self.prev_type != self.plugin_options["subtype"]:
+        if (
+            self.prev_type is not None
+            and self.prev_type != self.plugin_options["subtype"]
+        ):
             self.Release()
         self.prev_type = self.plugin_options["subtype"]
         if self.model_colorizer is None:
             # replace Mac mps with cpu for the moment
-            self.devicename = self.plugin_options["devicename"].replace('mps', 'cpu')
+            self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")
             if self.prev_type == "deoldify_artistic":
-                model_path = resolve_relative_path('../models/Frame/deoldify_artistic.onnx')
+                model_path = resolve_relative_path(
+                    "../models/Frame/deoldify_artistic.onnx"
+                )
             elif self.prev_type == "deoldify_stable":
-                model_path = resolve_relative_path('../models/Frame/deoldify_stable.onnx')
+                model_path = resolve_relative_path(
+                    "../models/Frame/deoldify_stable.onnx"
+                )
 
             onnxruntime.set_default_logger_severity(3)
-            self.model_colorizer = onnxruntime.InferenceSession(model_path, None, providers=roop.globals.execution_providers)
+            self.model_colorizer = onnxruntime.InferenceSession(
+                model_path, None, providers=roop.globals.execution_providers
+            )
             self.model_inputs = self.model_colorizer.get_inputs()
             model_outputs = self.model_colorizer.get_outputs()
             self.io_binding = self.model_colorizer.io_binding()
@@ -52,19 +61,23 @@ class Frame_Colorizer():
         result = ort_outs[0][0]
         del ort_outs
         colorized_frame = result.transpose(1, 2, 0)
-        colorized_frame = cv2.resize(colorized_frame, (input_frame.shape[1], input_frame.shape[0]))
+        colorized_frame = cv2.resize(
+            colorized_frame, (input_frame.shape[1], input_frame.shape[0])
+        )
         temp_blue_channel, _, _ = cv2.split(input_frame)
-        colorized_frame = cv2.cvtColor(colorized_frame, cv2.COLOR_BGR2RGB).astype(np.uint8)
+        colorized_frame = cv2.cvtColor(colorized_frame, cv2.COLOR_BGR2RGB).astype(
+            np.uint8
+        )
         colorized_frame = cv2.cvtColor(colorized_frame, cv2.COLOR_BGR2LAB)
         _, color_green_channel, color_red_channel = cv2.split(colorized_frame)
-        colorized_frame = cv2.merge((temp_blue_channel, color_green_channel, color_red_channel))
+        colorized_frame = cv2.merge(
+            (temp_blue_channel, color_green_channel, color_red_channel)
+        )
         colorized_frame = cv2.cvtColor(colorized_frame, cv2.COLOR_LAB2BGR)
         return colorized_frame.astype(np.uint8)
-
 
     def Release(self):
         del self.model_colorizer
         self.model_colorizer = None
         del self.io_binding
         self.io_binding = None
-

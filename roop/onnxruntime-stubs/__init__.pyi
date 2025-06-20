@@ -1,0 +1,6 @@
+# Local stub file for onnxruntime-directml
+from typing import Any
+
+class InferenceSession:
+    def __init__(self, model_path: str, providers: list[str] | None = None, **kwargs: Any) -> None: ...
+    def run(self, output_names: list[str] | None, input_feed: dict[str, Any], run_options: Any | None = None) -> list[Any]: ...

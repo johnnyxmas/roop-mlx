@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import List, Any
 from tqdm import tqdm
 from scipy.spatial import distance
+from urllib.parse import urlparse
 
 import roop.template_parser as template_parser
 
@@ -33,7 +34,7 @@ TEMP_FILE = "temp.mp4"
 TEMP_DIRECTORY = "temp"
 
 THREAD_SEMAPHORE = threading.Semaphore()
-NULL_CONTEXT  = nullcontext()
+NULL_CONTEXT = nullcontext()
 
 
 # monkey patch ssl for mac
@@ -197,24 +198,60 @@ def is_video(video_path: str) -> bool:
     return False
 
 
-def conditional_download(download_directory_path: str, urls: List[str]) -> None:
+def conditional_download(
+    download_directory_path: str, urls: List[str | List[str]]
+) -> None:
     if not os.path.exists(download_directory_path):
         os.makedirs(download_directory_path)
     for url in urls:
-        download_file_path = os.path.join(
-            download_directory_path, os.path.basename(url)
-        )
-        if not os.path.exists(download_file_path):
+        if isinstance(url, str):
+            download_file_path = os.path.join(
+                download_directory_path, os.path.basename(url)
+            )
+            if os.path.exists(download_file_path):
+                continue
             request = urllib.request.urlopen(url)  # type: ignore[attr-defined]
             total = int(request.headers.get("Content-Length", 0))
             with tqdm(
                 total=total,
-                desc=f"Downloading {url}",
+                desc=f"Downloading {os.path.basename(urlparse(url).path)}",
                 unit="B",
                 unit_scale=True,
                 unit_divisor=1024,
             ) as progress:
-                urllib.request.urlretrieve(url, download_file_path, reporthook=lambda count, block_size, total_size: progress.update(block_size))  # type: ignore[attr-defined]
+                urllib.request.urlretrieve(
+                    url,
+                    download_file_path,
+                    reporthook=lambda count, block_size, total_size: progress.update(
+                        block_size
+                    ),
+                )  # type: ignore[attr-defined]
+        elif isinstance(url, list):
+            for _url in url:
+                download_file_path = os.path.join(
+                    download_directory_path, os.path.basename(_url)
+                )
+                if os.path.exists(download_file_path):
+                    break
+                request = urllib.request.urlopen(_url)  # type: ignore[attr-defined]
+                if not request.status == 200:
+                    continue
+                total = int(request.headers.get("Content-Length", 0))
+                with tqdm(
+                    total=total,
+                    desc=f"Downloading {os.path.basename(urlparse(_url).path)}",
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                ) as progress:
+                    urllib.request.urlretrieve(
+                        _url,
+                        download_file_path,
+                        reporthook=lambda count,
+                        block_size,
+                        total_size: progress.update(block_size),
+                    )  # type: ignore[attr-defined]
+                break
 
 
 def get_local_files_from_folder(folder: str) -> List[str]:
@@ -260,8 +297,10 @@ def str_to_class(module_name, class_name) -> Any:
         print(f"Module {module_name} does not exist")
     return class_
 
-def is_installed(name:str) -> bool:
-    return shutil.which(name);
+
+def is_installed(name: str) -> bool:
+    return shutil.which(name)
+
 
 # Taken from https://stackoverflow.com/a/68842705
 def get_platform() -> str:
@@ -274,13 +313,15 @@ def get_platform() -> str:
             pass
     return sys.platform
 
-def open_with_default_app(filename:str):
+
+def open_with_default_app(filename: str):
     if filename == None:
         return
     platform = get_platform()
     if platform == "darwin":
         subprocess.call(("open", filename))
-    elif platform in ["win64", "win32"]:        os.startfile(filename.replace("/", "\\"))
+    elif platform in ["win64", "win32"]:
+        os.startfile(filename.replace("/", "\\"))
     elif platform == "wsl":
         subprocess.call("cmd.exe /C start".split() + [filename])
     else:  # linux variants
@@ -340,7 +381,7 @@ def create_version_html() -> str:
     versions_html = f"""
 python: <span title="{sys.version}">{python_version}</span>
 •
-torch: {getattr(torch, '__long_version__',torch.__version__)}
+torch: {getattr(torch, "__long_version__", torch.__version__)}
 •
 gradio: {gradio.__version__}
 """
@@ -350,15 +391,19 @@ gradio: {gradio.__version__}
 def compute_cosine_distance(emb1, emb2) -> float:
     return distance.cosine(emb1, emb2)
 
+
 def has_cuda_device():
     return torch.cuda is not None and torch.cuda.is_available()
 
 
 def print_cuda_info():
     try:
-        print(f'Number of CUDA devices: {torch.cuda.device_count()} Currently used Id: {torch.cuda.current_device()} Device Name: {torch.cuda.get_device_name(torch.cuda.current_device())}')
+        print(
+            f"Number of CUDA devices: {torch.cuda.device_count()} Currently used Id: {torch.cuda.current_device()} Device Name: {torch.cuda.get_device_name(torch.cuda.current_device())}"
+        )
     except:
-       print('No CUDA device found!')
+        print("No CUDA device found!")
+
 
 def clean_dir(path: str):
     contents = os.listdir(path)
@@ -371,23 +416,27 @@ def clean_dir(path: str):
                 shutil.rmtree(item_path)
         except Exception as e:
             print(e)
-            
+
 
 def conditional_thread_semaphore() -> Union[Any, Any]:
-    if 'DmlExecutionProvider' in roop.globals.execution_providers or 'ROCMExecutionProvider' in roop.globals.execution_providers:
+    if (
+        "DmlExecutionProvider" in roop.globals.execution_providers
+        or "ROCMExecutionProvider" in roop.globals.execution_providers
+    ):
         return THREAD_SEMAPHORE
     return NULL_CONTEXT
 
+
 def shuffle_array(arr):
-  """
-  Shuffles the given array in place using the Fisher-Yates shuffle algorithm.
+    """
+    Shuffles the given array in place using the Fisher-Yates shuffle algorithm.
 
-  Args:
-    arr: The array to be shuffled.
+    Args:
+      arr: The array to be shuffled.
 
-  Returns:
-    None. The array is shuffled in place.
-  """
-  for i in range(len(arr) - 1, 0, -1):
-    j = random.randint(0, i)
-    arr[i], arr[j] = arr[j], arr[i]
+    Returns:
+      None. The array is shuffled in place.
+    """
+    for i in range(len(arr) - 1, 0, -1):
+        j = random.randint(0, i)
+        arr[i], arr[j] = arr[j], arr[i]

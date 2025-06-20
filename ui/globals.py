@@ -10,8 +10,3 @@ ui_input_thumbs = []
 ui_target_thumbs = []
 ui_camera_frame = None
 ui_selected_swap_model = None
-
-
-
-
-

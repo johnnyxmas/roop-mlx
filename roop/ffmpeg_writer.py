@@ -21,8 +21,9 @@ DEVNULL = -3
 
 FFMPEG_BINARY = "ffmpeg"
 
+
 class FFMPEG_VideoWriter:
-    """ A class for FFMPEG-based video writing.
+    """A class for FFMPEG-based video writing.
 
     A class to write videos using ffmpeg. ffmpeg will write in a large
     choice of formats.
@@ -69,10 +70,20 @@ class FFMPEG_VideoWriter:
 
     """
 
-    def __init__(self, filename, size, fps, codec="libx265", crf=14, audiofile=None,
-                 preset="medium", bitrate=None,
-                 logfile=None, threads=None, ffmpeg_params=None):
-
+    def __init__(
+        self,
+        filename,
+        size,
+        fps,
+        codec="libx265",
+        crf=14,
+        audiofile=None,
+        preset="medium",
+        bitrate=None,
+        logfile=None,
+        threads=None,
+        ffmpeg_params=None,
+    ):
         if logfile is None:
             logfile = sp.PIPE
 
@@ -82,117 +93,132 @@ class FFMPEG_VideoWriter:
         w = size[0] - 1 if size[0] % 2 != 0 else size[0]
         h = size[1] - 1 if size[1] % 2 != 0 else size[1]
 
-
         # order is important
         cmd = [
             FFMPEG_BINARY,
-            '-hide_banner',
-            '-hwaccel', 'auto',
-            '-y',
-            '-loglevel', 'error' if logfile == sp.PIPE else 'info',
-            '-f', 'rawvideo',
-            '-vcodec', 'rawvideo',
-            '-s', '%dx%d' % (size[0], size[1]),
+            "-hide_banner",
+            "-hwaccel",
+            "auto",
+            "-y",
+            "-loglevel",
+            "error" if logfile == sp.PIPE else "info",
+            "-f",
+            "rawvideo",
+            "-vcodec",
+            "rawvideo",
+            "-s",
+            "%dx%d" % (size[0], size[1]),
             #'-pix_fmt', 'rgba' if withmask else 'rgb24',
-            '-pix_fmt', 'bgr24',
-            '-r', str(fps),
-            '-an', '-i', '-' 
+            "-pix_fmt",
+            "bgr24",
+            "-r",
+            str(fps),
+            "-an",
+            "-i",
+            "-",
         ]
 
         if audiofile is not None:
-            cmd.extend([
-                '-i', audiofile,
-                '-acodec', 'copy'
-            ])
+            cmd.extend(["-i", audiofile, "-acodec", "copy"])
 
-        cmd.extend([
-            '-vcodec', codec,
-            '-crf', str(crf)
-            #'-preset', preset,
-        ])
+        cmd.extend(
+            [
+                "-vcodec",
+                codec,
+                "-crf",
+                str(crf),
+                #'-preset', preset,
+            ]
+        )
         if ffmpeg_params is not None:
             cmd.extend(ffmpeg_params)
         if bitrate is not None:
-            cmd.extend([
-                '-b', bitrate
-            ])
+            cmd.extend(["-b", bitrate])
 
         # scale to a resolution divisible by 2 if not even
-        cmd.extend(['-vf', f'scale={w}:{h}' if w != size[0] or h != size[1] else 'colorspace=bt709:iall=bt601-6-625:fast=1'])
+        cmd.extend(
+            [
+                "-vf",
+                f"scale={w}:{h}"
+                if w != size[0] or h != size[1]
+                else "colorspace=bt709:iall=bt601-6-625:fast=1",
+            ]
+        )
 
         if threads is not None:
             cmd.extend(["-threads", str(threads)])
 
-        cmd.extend([
-            '-pix_fmt', 'yuv420p',
-
-        ])
-        cmd.extend([
-            filename
-        ])
+        cmd.extend(
+            [
+                "-pix_fmt",
+                "yuv420p",
+            ]
+        )
+        cmd.extend([filename])
 
         test = str(cmd)
         print(test)
 
-        popen_params = {"stdout": DEVNULL,
-                        "stderr": logfile,
-                        "stdin": sp.PIPE}
+        popen_params = {"stdout": DEVNULL, "stderr": logfile, "stdin": sp.PIPE}
 
         # This was added so that no extra unwanted window opens on windows
         # when the child process is created
         if os.name == "nt":
             popen_params["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-        
+
         self.proc = sp.Popen(cmd, **popen_params)
 
-
     def write_frame(self, img_array):
-        """ Writes one frame in the file."""
+        """Writes one frame in the file."""
         try:
-            #if PY3:
+            # if PY3:
             self.proc.stdin.write(img_array.tobytes())
             # else:
             #    self.proc.stdin.write(img_array.tostring())
         except IOError as err:
             _, ffmpeg_error = self.proc.communicate()
-            error = (str(err) + ("\n\nroop unleashed error: FFMPEG encountered "
-                                 "the following error while writing file %s:"
-                                 "\n\n %s" % (self.filename, str(ffmpeg_error))))
+            error = str(err) + (
+                "\n\nroop unleashed error: FFMPEG encountered "
+                "the following error while writing file %s:"
+                "\n\n %s" % (self.filename, str(ffmpeg_error))
+            )
 
             if b"Unknown encoder" in ffmpeg_error:
-
-                error = error+("\n\nThe video export "
-                  "failed because FFMPEG didn't find the specified "
-                  "codec for video encoding (%s). Please install "
-                  "this codec or change the codec when calling "
-                  "write_videofile. For instance:\n"
-                  "  >>> clip.write_videofile('myvid.webm', codec='libvpx')")%(self.codec)
+                error = error + (
+                    "\n\nThe video export "
+                    "failed because FFMPEG didn't find the specified "
+                    "codec for video encoding (%s). Please install "
+                    "this codec or change the codec when calling "
+                    "write_videofile. For instance:\n"
+                    "  >>> clip.write_videofile('myvid.webm', codec='libvpx')"
+                ) % (self.codec)
 
             elif b"incorrect codec parameters ?" in ffmpeg_error:
+                error = error + (
+                    "\n\nThe video export "
+                    "failed, possibly because the codec specified for "
+                    "the video (%s) is not compatible with the given "
+                    "extension (%s). Please specify a valid 'codec' "
+                    "argument in write_videofile. This would be 'libx264' "
+                    "or 'mpeg4' for mp4, 'libtheora' for ogv, 'libvpx for webm. "
+                    "Another possible reason is that the audio codec was not "
+                    "compatible with the video codec. For instance the video "
+                    "extensions 'ogv' and 'webm' only allow 'libvorbis' (default) as a"
+                    "video codec."
+                ) % (self.codec, self.ext)
 
-                 error = error+("\n\nThe video export "
-                  "failed, possibly because the codec specified for "
-                  "the video (%s) is not compatible with the given "
-                  "extension (%s). Please specify a valid 'codec' "
-                  "argument in write_videofile. This would be 'libx264' "
-                  "or 'mpeg4' for mp4, 'libtheora' for ogv, 'libvpx for webm. "
-                  "Another possible reason is that the audio codec was not "
-                  "compatible with the video codec. For instance the video "
-                  "extensions 'ogv' and 'webm' only allow 'libvorbis' (default) as a"
-                  "video codec."
-                  )%(self.codec, self.ext)
-
-            elif  b"encoder setup failed" in ffmpeg_error:
-
-                error = error+("\n\nThe video export "
-                  "failed, possibly because the bitrate you specified "
-                  "was too high or too low for the video codec.")
+            elif b"encoder setup failed" in ffmpeg_error:
+                error = error + (
+                    "\n\nThe video export "
+                    "failed, possibly because the bitrate you specified "
+                    "was too high or too low for the video codec."
+                )
 
             elif b"Invalid encoder type" in ffmpeg_error:
-
-                error = error + ("\n\nThe video export failed because the codec "
-                  "or file extension you provided is not a video")
-
+                error = error + (
+                    "\n\nThe video export failed because the codec "
+                    "or file extension you provided is not a video"
+                )
 
             raise IOError(error)
 
@@ -212,7 +238,3 @@ class FFMPEG_VideoWriter:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
-
-
-
-    

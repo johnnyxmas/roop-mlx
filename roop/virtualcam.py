@@ -10,15 +10,21 @@ cam_active = False
 cam_thread = None
 vcam = None
 
-def virtualcamera(swap_model, streamobs, use_xseg, use_mouthrestore, cam_num,width,height):
+
+def virtualcamera(
+    swap_model, streamobs, use_xseg, use_mouthrestore, cam_num, width, height
+):
     from roop.ProcessOptions import ProcessOptions
     from roop.core import live_swap, get_processing_plugins
 
     global cam_active
 
-    #time.sleep(2)
-    print('Starting capture')
-    cap = cv2.VideoCapture(cam_num, cv2.CAP_DSHOW if platform.system() != 'Darwin' else cv2.CAP_AVFOUNDATION)
+    # time.sleep(2)
+    print("Starting capture")
+    cap = cv2.VideoCapture(
+        cam_num,
+        cv2.CAP_DSHOW if platform.system() != "Darwin" else cv2.CAP_AVFOUNDATION,
+    )
     if not cap.isOpened():
         print("Cannot open camera")
         cap.release()
@@ -37,18 +43,35 @@ def virtualcamera(swap_model, streamobs, use_xseg, use_mouthrestore, cam_num,wid
 
     cam = None
     if streamobs:
-        print('Detecting virtual cam devices')
-        cam = pyvirtualcam.Camera(width=pref_width, height=pref_height, fps=pref_fps_in, fmt=pyvirtualcam.PixelFormat.BGR, print_fps=False)
+        print("Detecting virtual cam devices")
+        cam = pyvirtualcam.Camera(
+            width=pref_width,
+            height=pref_height,
+            fps=pref_fps_in,
+            fmt=pyvirtualcam.PixelFormat.BGR,
+            print_fps=False,
+        )
     if cam:
-        print(f'Using virtual camera: {cam.device}')
-        print(f'Using {cam.native_fmt}')
+        print(f"Using virtual camera: {cam.device}")
+        print(f"Using {cam.native_fmt}")
     else:
-        print(f'Not streaming to virtual camera!')
+        print(f"Not streaming to virtual camera!")
     subsample_size = roop.globals.subsample_size
 
-
-    options = ProcessOptions(swap_model, get_processing_plugins("mask_xseg" if use_xseg else None), roop.globals.distance_threshold, roop.globals.blend_ratio,
-                              "all", 0, None, None, 1, subsample_size, False, use_mouthrestore)
+    options = ProcessOptions(
+        swap_model,
+        get_processing_plugins("mask_xseg" if use_xseg else None),
+        roop.globals.distance_threshold,
+        roop.globals.blend_ratio,
+        "all",
+        0,
+        None,
+        None,
+        1,
+        subsample_size,
+        False,
+        use_mouthrestore,
+    )
     while cam_active:
         ret, frame = cap.read()
         if not ret:
@@ -64,18 +87,29 @@ def virtualcamera(swap_model, streamobs, use_xseg, use_mouthrestore, cam_num,wid
     if cam:
         cam.close()
     cap.release()
-    print('Camera stopped')
+    print("Camera stopped")
 
 
-
-def start_virtual_cam(swap_model, streamobs, use_xseg, use_mouthrestore, cam_number, resolution):
+def start_virtual_cam(
+    swap_model, streamobs, use_xseg, use_mouthrestore, cam_number, resolution
+):
     global cam_thread, cam_active
 
     if not cam_active:
-        width, height = map(int, resolution.split('x'))
-        cam_thread = threading.Thread(target=virtualcamera, args=[swap_model, streamobs, use_xseg, use_mouthrestore, cam_number, width, height])
+        width, height = map(int, resolution.split("x"))
+        cam_thread = threading.Thread(
+            target=virtualcamera,
+            args=[
+                swap_model,
+                streamobs,
+                use_xseg,
+                use_mouthrestore,
+                cam_number,
+                width,
+                height,
+            ],
+        )
         cam_thread.start()
-
 
 
 def stop_virtual_cam():
@@ -84,5 +118,3 @@ def stop_virtual_cam():
     if cam_active:
         cam_active = False
         cam_thread.join()
-
-

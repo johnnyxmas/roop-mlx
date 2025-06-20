@@ -12,8 +12,8 @@ from roop.capturer import get_video_frame
 from roop.utilities import resolve_relative_path, conditional_thread_semaphore
 
 FACE_ANALYSER = None
-#THREAD_LOCK_ANALYSER = threading.Lock()
-#THREAD_LOCK_SWAPPER = threading.Lock()
+# THREAD_LOCK_ANALYSER = threading.Lock()
+# THREAD_LOCK_SWAPPER = threading.Lock()
 FACE_SWAPPER = None
 
 
@@ -21,8 +21,12 @@ def get_face_analyser() -> Any:
     global FACE_ANALYSER
 
     with conditional_thread_semaphore():
-        if FACE_ANALYSER is None or roop.globals.g_current_face_analysis != roop.globals.g_desired_face_analysis:
-            model_path = resolve_relative_path('..')
+        if (
+            FACE_ANALYSER is None
+            or roop.globals.g_current_face_analysis
+            != roop.globals.g_desired_face_analysis
+        ):
+            model_path = resolve_relative_path("..")
             # removed genderage
             allowed_modules = roop.globals.g_desired_face_analysis
             roop.globals.g_current_face_analysis = roop.globals.g_desired_face_analysis
@@ -30,17 +34,30 @@ def get_face_analyser() -> Any:
                 print("Forcing CPU for Face Analysis")
                 FACE_ANALYSER = insightface.app.FaceAnalysis(
                     name="buffalo_l",
-                    root=model_path, providers=["CPUExecutionProvider"],allowed_modules=allowed_modules
+                    root=model_path,
+                    providers=["CPUExecutionProvider"],
+                    allowed_modules=allowed_modules,
                 )
             else:
                 FACE_ANALYSER = insightface.app.FaceAnalysis(
-                    name="buffalo_l", root=model_path, providers=roop.globals.execution_providers,allowed_modules=allowed_modules
+                    name="buffalo_l",
+                    root=model_path,
+                    providers=roop.globals.execution_providers,
+                    allowed_modules=allowed_modules,
                 )
             FACE_ANALYSER.prepare(
                 ctx_id=0,
                 det_size=(640, 640) if roop.globals.default_det_size else (320, 320),
             )
     return FACE_ANALYSER
+
+
+def release_face_analyser() -> None:
+    """Release the global face analyzer to free memory"""
+    global FACE_ANALYSER
+    if FACE_ANALYSER is not None:
+        del FACE_ANALYSER
+        FACE_ANALYSER = None
 
 
 def get_first_face(frame: Frame) -> Any:
@@ -71,7 +88,9 @@ def extract_face_images(source_filename, video_info, extra_padding=-1.0):
         else:
             return face_data
     else:
-        source_image = cv2.imdecode(np.fromfile(source_filename, dtype=np.uint8), cv2.IMREAD_COLOR)
+        source_image = cv2.imdecode(
+            np.fromfile(source_filename, dtype=np.uint8), cv2.IMREAD_COLOR
+        )
 
     faces = get_all_faces(source_image)
     if faces is None:
@@ -80,7 +99,9 @@ def extract_face_images(source_filename, video_info, extra_padding=-1.0):
     i = 0
     for face in faces:
         (startX, startY, endX, endY) = face["bbox"].astype("int")
-        startX, endX, startY, endY = clamp_cut_values(startX, endX, startY, endY, source_image)
+        startX, endX, startY, endY = clamp_cut_values(
+            startX, endX, startY, endY, source_image
+        )
         if extra_padding > 0.0:
             if source_image.shape[:2] == (512, 512):
                 i += 1
@@ -90,7 +111,9 @@ def extract_face_images(source_filename, video_info, extra_padding=-1.0):
             found = False
             for i in range(1, 3):
                 (startX, startY, endX, endY) = face["bbox"].astype("int")
-                startX, endX, startY, endY = clamp_cut_values(startX, endX, startY, endY, source_image)
+                startX, endX, startY, endY = clamp_cut_values(
+                    startX, endX, startY, endY, source_image
+                )
                 cutout_padding = extra_padding
                 # top needs extra room for detection
                 padding = int((endY - startY) * cutout_padding)
@@ -139,7 +162,6 @@ def clamp_cut_values(startX, endX, startY, endY, image):
     if endY > image.shape[0]:
         endY = image.shape[0]
     return startX, endX, startY, endY
-
 
 
 def face_offset_top(face: Face, offset):
@@ -230,34 +252,34 @@ arcface_dst = np.array(
     return M
  """
 
+
 def estimate_norm(lmk, image_size=112):
-    if image_size%112==0:
-        ratio = float(image_size)/112.0
+    if image_size % 112 == 0:
+        ratio = float(image_size) / 112.0
         diff_x = 0
     else:
-        ratio = float(image_size)/128.0
-        diff_x = 8.0*ratio
+        ratio = float(image_size) / 128.0
+        diff_x = 8.0 * ratio
     dst = arcface_dst * ratio
-    dst[:,0] += diff_x
+    dst[:, 0] += diff_x
 
     if image_size == 160:
-        dst[:,0] += 0.1
-        dst[:,1] += 0.1
+        dst[:, 0] += 0.1
+        dst[:, 1] += 0.1
     elif image_size == 256:
-        dst[:,0] += 0.5
-        dst[:,1] += 0.5
+        dst[:, 0] += 0.5
+        dst[:, 1] += 0.5
     elif image_size == 320:
-        dst[:,0] += 0.75
-        dst[:,1] += 0.75
+        dst[:, 0] += 0.75
+        dst[:, 1] += 0.75
     elif image_size == 512:
-        dst[:,0] += 1.5
-        dst[:,1] += 1.5
+        dst[:, 0] += 1.5
+        dst[:, 1] += 1.5
 
     tform = trans.SimilarityTransform()
     tform.estimate(lmk, dst)
     M = tform.params[0:2, :]
     return M
-
 
 
 # aligned, M = norm_crop2(f[1], face.kps, 512)
@@ -330,9 +352,9 @@ def trans_points(pts, M):
         return trans_points2d(pts, M)
     else:
         return trans_points3d(pts, M)
-    
+
+
 def create_blank_image(width, height):
     img = np.zeros((height, width, 4), dtype=np.uint8)
-    img[:] = [0,0,0,0]
+    img[:] = [0, 0, 0, 0]
     return img
-

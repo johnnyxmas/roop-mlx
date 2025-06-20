@@ -26,7 +26,7 @@ max_memory = None
 execution_providers: List[str] = []
 execution_threads = None
 headless = None
-log_level = 'error'
+log_level = "error"
 selected_enhancer = None
 subsample_size = 128
 face_swap_mode = None
@@ -52,5 +52,3 @@ VIDEO_CHAIN_PROCESSOR = None
 BATCH_IMAGE_CHAIN_PROCESSOR = None
 
 CFG: Settings = None
-
-
