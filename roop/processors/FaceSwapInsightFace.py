@@ -41,25 +41,8 @@ class FaceSwapInsightFace:
             sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
             sess_options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
             
-            # Provider-specific optimizations
-            provider_options = []
-            for provider in roop.globals.execution_providers:
-                if provider == "CUDAExecutionProvider":
-                    provider_options.append({
-                        'arena_extend_strategy': 'kSameAsRequested',
-                        'cudnn_conv_algo_search': 'HEURISTIC',
-                        'do_copy_in_default_stream': True,
-                    })
-                elif provider == "CPUExecutionProvider":
-                    provider_options.append({
-                        'enable_cpu_mem_arena': False,
-                        'arena_extend_strategy': 'kSameAsRequested',
-                    })
-                else:
-                    provider_options.append({})
-            
             self.model_swap_insightface = onnxruntime.InferenceSession(
-                model_path, sess_options, providers=list(zip(roop.globals.execution_providers, provider_options))
+                model_path, sess_options, providers=roop.globals.execution_providers
             )
 
     def Run(self, source_face: Face, target_face: Face, temp_frame: Frame) -> Frame:
