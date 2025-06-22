@@ -175,15 +175,36 @@ class FFMPEG_VideoWriter:
             self.proc.stdin.write(img_array.tobytes())
             # else:
             #    self.proc.stdin.write(img_array.tostring())
-        except IOError as err:
-            _, ffmpeg_error = self.proc.communicate()
+        except (IOError, OSError, BrokenPipeError) as err:
+            try:
+                _, ffmpeg_error = self.proc.communicate(timeout=5)
+            except:
+                ffmpeg_error = b"Process communication failed"
+                
             error = str(err) + (
                 "\n\nroop unleashed error: FFMPEG encountered "
                 "the following error while writing file %s:"
                 "\n\n %s" % (self.filename, str(ffmpeg_error))
             )
 
-            if b"Unknown encoder" in ffmpeg_error:
+            # Check for hardware encoder specific errors
+            if (b"Failed locking bitstream buffer" in ffmpeg_error or
+                b"hevc_nvenc" in ffmpeg_error or
+                b"h264_nvenc" in ffmpeg_error or
+                b"Error encoding a frame" in ffmpeg_error):
+                error = error + (
+                    "\n\nHardware encoder (NVENC) failed. This is usually due to:"
+                    "\n- GPU memory exhaustion"
+                    "\n- Too many concurrent encoding sessions"
+                    "\n- GPU driver issues"
+                    "\n\nConsider:"
+                    "\n- Reducing video resolution or quality"
+                    "\n- Using software encoding (libx264/libx265)"
+                    "\n- Closing other GPU-intensive applications"
+                    "\n- Updating GPU drivers"
+                )
+
+            elif b"Unknown encoder" in ffmpeg_error:
                 error = error + (
                     "\n\nThe video export "
                     "failed because FFMPEG didn't find the specified "

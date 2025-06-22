@@ -331,11 +331,19 @@ class ProcessMgr:
             process, frame = self.processed_queue[nextindex % self.num_threads].get()
             nextindex += 1
             if frame is not None:
-                if self.output_to_file:
-                    self.videowriter.write_frame(frame)
-                if self.output_to_cam:
-                    self.streamwriter.WriteToStream(frame)
-                del frame
+                try:
+                    if self.output_to_file:
+                        self.videowriter.write_frame(frame)
+                    if self.output_to_cam:
+                        self.streamwriter.WriteToStream(frame)
+                except (IOError, OSError, BrokenPipeError) as e:
+                    print(f"Error writing frame: {e}")
+                    # Stop processing on write error to prevent further issues
+                    import roop.globals
+                    roop.globals.processing = False
+                    return
+                finally:
+                    del frame
             elif process == False:
                 num_producers -= 1
                 if num_producers < 1:
