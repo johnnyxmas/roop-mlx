@@ -587,7 +587,9 @@ def end_processing(msg: str):
     # Only do full cleanup if job finished successfully, not if stopped
     if msg == "Finished":
         cleanup_cache_folders()
-        release_resources()
+        # Don't release resources after successful completion to allow subsequent swaps
+        # Only do basic GPU cleanup to free memory
+        basic_gpu_cleanup()
     else:
         # For stopped/failed jobs, only do basic cleanup without releasing resources
         cleanup_temp_folders_only()
@@ -653,7 +655,6 @@ def cleanup_cache_folders():
     import tempfile
     import shutil
     from roop import utilities as util
-    from roop.face_util import release_face_analyser
     
     try:
         # Clean up temp folder used for frame extraction
@@ -696,9 +697,9 @@ def cleanup_cache_folders():
             except Exception as e:
                 print(f"Warning: Could not clean CLIP cache: {e}")
         
-        # Release face analyzer only after job completion
-        release_face_analyser()
-        update_status("Released face analyzer models")
+        # Don't release face analyzer after successful completion to allow subsequent swaps
+        # Only release it when explicitly shutting down the application
+        update_status("Cleaned temporary files (keeping models loaded for next swap)")
                 
     except Exception as e:
         print(f"Warning: Error during cache cleanup: {e}")
