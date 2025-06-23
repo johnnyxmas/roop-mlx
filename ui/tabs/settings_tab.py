@@ -245,13 +245,16 @@ def on_settings_changed(evt: gr.SelectData):
 
 def clean_temp():
     from ui.main import prepare_environment
+    from roop.core import cleanup_cache_folders
 
     ui.globals.ui_input_thumbs.clear()
     roop.globals.INPUT_FACESETS.clear()
     roop.globals.TARGET_FACES.clear()
     ui.globals.ui_target_thumbs = []
-    if not roop.globals.CFG.use_os_temp_folder:
-        clean_dir(os.environ["TEMP"])
+    
+    # Use comprehensive cleanup function instead of just OS temp
+    cleanup_cache_folders()
+    
     prepare_environment()
     gr.Info("Temp Files removed")
     return None, None, None, None

@@ -317,6 +317,7 @@ class ProcessMgr:
                     else:
                         resimg = self.process_frame(frame)
                     self.processed_queue[threadindex].put((True, resimg))
+                        
                 finally:
                     # Always cleanup the original frame
                     del frame
@@ -459,21 +460,56 @@ class ProcessMgr:
         process = psutil.Process(os.getpid())
         memory_usage = process.memory_info().rss / 1024 / 1024 / 1024
         
-        # Use user's max memory setting for warnings and cleanup
+        # Use user's max memory setting for warnings and cleanup (this is for system RAM)
         max_memory_gb = roop.globals.max_memory if roop.globals.max_memory else 16
         warning_threshold = max_memory_gb * 0.8  # Warn at 80% of max memory
         cleanup_threshold = max_memory_gb * 0.9  # Force cleanup at 90% of max memory
         
+        # Check GPU VRAM usage if CUDA is available
+        gpu_memory_info = ""
+        gpu_cleanup_needed = False
+        
+        if (
+            "CUDAExecutionProvider" in roop.globals.execution_providers
+            and hasattr(roop.globals, 'torch') and roop.globals.torch.cuda.is_available()
+        ):
+            try:
+                gpu_memory_used = roop.globals.torch.cuda.memory_allocated() / 1024**3
+                gpu_memory_total = roop.globals.torch.cuda.get_device_properties(0).total_memory / 1024**3
+                gpu_usage_percent = (gpu_memory_used / gpu_memory_total) * 100
+                
+                gpu_memory_info = f", GPU: {gpu_memory_used:.1f}/{gpu_memory_total:.1f}GB ({gpu_usage_percent:.1f}%)"
+                
+                # GPU cleanup threshold - only at critically high usage to avoid interfering with encoding
+                if gpu_usage_percent > 90:  # Only trigger cleanup at 90% to avoid encoding interference
+                    gpu_cleanup_needed = True
+                    print(f"WARNING: GPU memory usage ({gpu_usage_percent:.1f}%) is critically high. Forcing GPU cleanup...")
+                    
+            except Exception as e:
+                gpu_memory_info = ", GPU: N/A"
+        
+        # System RAM cleanup
         if memory_usage > cleanup_threshold:
-            print(f"WARNING: Memory usage ({memory_usage:.2f}GB) exceeds 90% of limit ({max_memory_gb}GB). Forcing garbage collection...")
+            print(f"WARNING: System RAM usage ({memory_usage:.2f}GB) exceeds 90% of limit ({max_memory_gb}GB). Forcing garbage collection...")
             gc.collect()
         elif memory_usage > warning_threshold:
-            print(f"INFO: Memory usage ({memory_usage:.2f}GB) approaching limit ({max_memory_gb}GB)")
+            print(f"INFO: System RAM usage ({memory_usage:.2f}GB) approaching limit ({max_memory_gb}GB)")
+        
+        # GPU VRAM cleanup - avoid synchronization during video processing
+        if gpu_cleanup_needed:
+            try:
+                with roop.globals.torch.cuda.device("cuda"):
+                    roop.globals.torch.cuda.empty_cache()
+                    # Skip synchronization during video processing to avoid encoding interference
+                    # Only do garbage collection for system RAM
+                gc.collect()
+            except Exception as e:
+                print(f"Warning: Could not clean GPU memory: {e}")
             
         progress.set_postfix(
             {
-                "memory_usage": "{:.2f}".format(memory_usage).zfill(5) + "GB",
-                "max_memory": f"{max_memory_gb}GB",
+                "memory_usage": "{:.2f}".format(memory_usage).zfill(5) + "GB" + gpu_memory_info,
+                "max_memory": f"{max_memory_gb}GB (RAM)",
                 "execution_threads": self.num_threads,
             }
         )
@@ -1197,3 +1233,39 @@ class ProcessMgr:
             
         # Force garbage collection
         gc.collect()
+
+    def _cleanup_gpu_memory(self):
+        """Aggressive GPU memory cleanup to prevent VRAM buildup"""
+        import gc
+        import roop.globals
+        
+        try:
+            if (
+                "CUDAExecutionProvider" in roop.globals.execution_providers
+                and hasattr(roop.globals, 'torch') and roop.globals.torch.cuda.is_available()
+            ):
+                with roop.globals.torch.cuda.device("cuda"):
+                    roop.globals.torch.cuda.empty_cache()
+                    roop.globals.torch.cuda.synchronize()
+                    roop.globals.torch.cuda.ipc_collect()
+                gc.collect()
+        except Exception as e:
+            # Silently ignore GPU cleanup errors to avoid disrupting processing
+            pass
+
+    def _cleanup_gpu_memory_light(self):
+        """Ultra-light GPU memory cleanup that avoids any interference with encoding"""
+        import gc
+        import roop.globals
+        
+        try:
+            if (
+                "CUDAExecutionProvider" in roop.globals.execution_providers
+                and hasattr(roop.globals, 'torch') and roop.globals.torch.cuda.is_available()
+            ):
+                # Only empty cache without any synchronization or blocking operations
+                roop.globals.torch.cuda.empty_cache()
+                # Skip garbage collection during video processing to avoid delays
+        except Exception as e:
+            # Silently ignore GPU cleanup errors to avoid disrupting processing
+            pass

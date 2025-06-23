@@ -584,17 +584,9 @@ def end_processing(msg: str):
     update_status(msg)
     roop.globals.target_folder_path = None
     
-    # Only do full cleanup if job finished successfully, not if stopped
-    if msg == "Finished":
-        cleanup_cache_folders()
-        # Don't release resources after successful completion to allow subsequent swaps
-        # Only do basic GPU cleanup to free memory
-        basic_gpu_cleanup()
-    else:
-        # For stopped/failed jobs, only do basic cleanup without releasing resources
-        cleanup_temp_folders_only()
-        # Only do basic GPU cleanup without releasing process manager
-        basic_gpu_cleanup()
+    # No automatic temp folder cleanup - only do basic GPU cleanup
+    # Temp folders will only be cleaned on explicit user action (Ctrl+C or cleanup button)
+    basic_gpu_cleanup()
 
 
 def basic_gpu_cleanup():
@@ -609,14 +601,21 @@ def basic_gpu_cleanup():
         "CUDAExecutionProvider" in roop.globals.execution_providers
         and torch.cuda.is_available()
     ):
-        with torch.cuda.device("cuda"):
-            torch.cuda.empty_cache()
+        try:
+            with torch.cuda.device("cuda"):
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                # Additional GPU memory cleanup
+                torch.cuda.ipc_collect()
+        except Exception as e:
+            print(f"Warning: Could not perform GPU cleanup: {e}")
 
 
 def cleanup_temp_folders_only():
     """Clean up only temporary folders without releasing face analyzer (for stopped jobs)"""
     import tempfile
     import shutil
+    import time
     from roop import utilities as util
     
     try:
@@ -627,24 +626,51 @@ def cleanup_temp_folders_only():
         # Clean up batch processing temp folder
         tempfolder = os.path.join(tempfile.gettempdir(), "rooptmp")
         if os.path.exists(tempfolder):
-            shutil.rmtree(tempfolder)
-            update_status("Cleaned batch processing temp folder")
+            try:
+                shutil.rmtree(tempfolder)
+                update_status("Cleaned batch processing temp folder")
+            except Exception as e:
+                print(f"Warning: Could not clean batch processing temp folder: {e}")
         
-        # Clean up application temp folder if not using OS temp
+        # Clean up application temp folder if not using OS temp - but avoid Gradio files
         if not roop.globals.CFG.use_os_temp_folder:
             app_temp_dir = os.path.abspath(os.path.join(os.getcwd(), "temp"))
             if os.path.exists(app_temp_dir):
-                # Only clean contents, not the folder itself
+                cleaned_count = 0
+                total_count = 0
+                
+                # Only clean contents, not the folder itself, and avoid Gradio temp files
                 for item in os.listdir(app_temp_dir):
                     item_path = os.path.join(app_temp_dir, item)
+                    total_count += 1
+                    
+                    # Skip Gradio temp files (they have long hex names and contain background.png, etc.)
+                    if os.path.isdir(item_path):
+                        # Check if this looks like a Gradio temp directory
+                        try:
+                            dir_contents = os.listdir(item_path)
+                            # Skip directories that contain Gradio UI files
+                            if any(fname in ['background.png', 'composite.png', 'layers.json'] for fname in dir_contents):
+                                continue
+                        except (OSError, PermissionError):
+                            # If we can't read the directory, skip it to be safe
+                            continue
+                    
                     try:
                         if os.path.isdir(item_path):
                             shutil.rmtree(item_path)
                         else:
                             os.remove(item_path)
+                        cleaned_count += 1
+                    except PermissionError:
+                        # File is in use, skip it to avoid corrupting active UI files
+                        pass
                     except Exception as e:
-                        print(f"Warning: Could not clean {item_path}: {e}")
-                update_status("Cleaned application temp folder")
+                        # Other errors, skip silently
+                        pass
+                        
+                if cleaned_count > 0:
+                    update_status(f"Cleaned {cleaned_count}/{total_count} temp files (preserved UI files)")
                 
     except Exception as e:
         print(f"Warning: Error during temp cleanup: {e}")
@@ -667,21 +693,46 @@ def cleanup_cache_folders():
             shutil.rmtree(tempfolder)
             update_status("Cleaned batch processing temp folder")
         
-        # Clean up application temp folder if not using OS temp
+        # Clean up application temp folder if not using OS temp - but avoid Gradio files
         if not roop.globals.CFG.use_os_temp_folder:
             app_temp_dir = os.path.abspath(os.path.join(os.getcwd(), "temp"))
             if os.path.exists(app_temp_dir):
-                # Only clean contents, not the folder itself
+                import time
+                cleaned_count = 0
+                total_count = 0
+                
+                # Only clean contents, not the folder itself, and avoid Gradio temp files
                 for item in os.listdir(app_temp_dir):
                     item_path = os.path.join(app_temp_dir, item)
+                    total_count += 1
+                    
+                    # Skip Gradio temp files (they have long hex names and contain background.png, etc.)
+                    if os.path.isdir(item_path):
+                        # Check if this looks like a Gradio temp directory
+                        try:
+                            dir_contents = os.listdir(item_path)
+                            # Skip directories that contain Gradio UI files
+                            if any(fname in ['background.png', 'composite.png', 'layers.json'] for fname in dir_contents):
+                                continue
+                        except (OSError, PermissionError):
+                            # If we can't read the directory, skip it to be safe
+                            continue
+                    
                     try:
                         if os.path.isdir(item_path):
                             shutil.rmtree(item_path)
                         else:
                             os.remove(item_path)
+                        cleaned_count += 1
+                    except PermissionError:
+                        # File is in use, skip it to avoid corrupting active UI files
+                        pass
                     except Exception as e:
-                        print(f"Warning: Could not clean {item_path}: {e}")
-                update_status("Cleaned application temp folder")
+                        # Other errors, skip silently
+                        pass
+                        
+                if cleaned_count > 0:
+                    update_status(f"Cleaned {cleaned_count}/{total_count} temp files (preserved UI files)")
         
         # Clean up CLIP cache if it exists
         clip_cache_dir = os.path.expanduser("~/.cache/clip")
@@ -706,8 +757,13 @@ def cleanup_cache_folders():
 
 
 def destroy() -> None:
-    if roop.globals.target_path:
-        util.clean_temp(roop.globals.target_path)
+    """Called on Ctrl+C or script termination - do full cleanup"""
+    update_status("Shutting down - cleaning up temp files...")
+    
+    # Do full temp folder cleanup on shutdown
+    cleanup_cache_folders()
+    
+    # Release all resources
     release_resources()
     sys.exit()
 
