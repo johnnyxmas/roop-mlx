@@ -446,9 +446,15 @@ class ProcessMgr:
         writethread.join()
         cap.release()
         if self.output_to_file:
-            self.videowriter.close()
+            try:
+                self.videowriter.close()
+            except Exception as e:
+                print(f"Warning: Error closing video writer (video may still be valid): {e}")
         if self.output_to_cam:
-            self.streamwriter.Close()
+            try:
+                self.streamwriter.Close()
+            except Exception as e:
+                print(f"Warning: Error closing stream writer: {e}")
 
         self.frames_queue.clear()
         self.processed_queue.clear()

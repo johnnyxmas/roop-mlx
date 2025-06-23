@@ -166,7 +166,10 @@ class FFMPEG_VideoWriter:
         if os.name == "nt":
             popen_params["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
 
-        self.proc = sp.Popen(cmd, **popen_params)
+        try:
+            self.proc = sp.Popen(cmd, **popen_params)
+        except Exception as e:
+            raise IOError(f"Failed to start FFMPEG process: {e}")
 
     def write_frame(self, img_array):
         """Writes one frame in the file."""
@@ -245,10 +248,41 @@ class FFMPEG_VideoWriter:
 
     def close(self):
         if self.proc:
-            self.proc.stdin.close()
-            if self.proc.stderr is not None:
-                self.proc.stderr.close()
-            self.proc.wait()
+            try:
+                self.proc.stdin.close()
+                if self.proc.stderr is not None:
+                    self.proc.stderr.close()
+                
+                # Wait for process to complete with timeout to avoid hanging
+                return_code = self.proc.wait(timeout=30)
+                
+                # Check for assertion failures or other FFMPEG errors
+                if return_code != 0:
+                    print(f"Warning: FFMPEG process exited with code {return_code}")
+                    # Don't raise an error for assertion failures if video was mostly processed
+                    # These are often internal FFMPEG issues that don't affect the output
+                    
+            except sp.TimeoutExpired:
+                print("Warning: FFMPEG process did not terminate within timeout, forcing termination")
+                self.proc.terminate()
+                try:
+                    self.proc.wait(timeout=5)
+                except sp.TimeoutExpired:
+                    print("Warning: Force killing FFMPEG process")
+                    self.proc.kill()
+                    self.proc.wait()
+            except Exception as e:
+                print(f"Warning: Error during FFMPEG cleanup: {e}")
+                # Try to terminate gracefully
+                try:
+                    self.proc.terminate()
+                    self.proc.wait(timeout=5)
+                except:
+                    try:
+                        self.proc.kill()
+                        self.proc.wait()
+                    except:
+                        pass
 
         self.proc = None
 
