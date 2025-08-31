@@ -44,7 +44,7 @@ def livecam_tab():
 
         with gr.Row():
             fake_cam_image = gr.Image(
-                label="Fake Camera Output", interactive=False, format="jpeg"
+                label="Fake Camera Output", interactive=False
             )
 
     start_event = bt_start.click(

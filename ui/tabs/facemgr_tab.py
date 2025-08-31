@@ -27,7 +27,6 @@ def facemgr_tab() -> None:
                 height=576,
                 interactive=False,
                 visible=True,
-                format="jpeg",
             )
         with gr.Row():
             frame_num_fst = gr.Slider(

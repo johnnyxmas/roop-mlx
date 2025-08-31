@@ -216,7 +216,6 @@ def faceswap_tab():
                     height=576,
                     interactive=False,
                     visible=True,
-                    format=get_gradio_output_format(),
                 )
                 maskimage = gr.ImageEditor(
                     label="Manual mask Image",
