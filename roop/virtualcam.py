@@ -60,7 +60,7 @@ def virtualcamera(
 
     options = ProcessOptions(
         swap_model,
-        get_processing_plugins("mask_xseg" if use_xseg else None),
+        get_processing_plugins("mask_xseg" if use_xseg else None, swap_model),
         roop.globals.distance_threshold,
         roop.globals.blend_ratio,
         "all",

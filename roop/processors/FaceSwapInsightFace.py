@@ -46,7 +46,9 @@ class FaceSwapInsightFace:
                 model_path, sess_options, providers=roop.globals.execution_providers
             )
 
-    def Run(self, source_face: Face, target_face: Face, temp_frame: Frame) -> Frame:
+    def Run(self, source_face, target_face: Face, temp_frame: Frame) -> Frame:
+        if hasattr(source_face, 'faces'):
+            source_face = source_face.faces[0]
         latent = source_face.normed_embedding.reshape((1, -1))
         latent = np.dot(latent, self.emap)
         latent /= np.linalg.norm(latent)

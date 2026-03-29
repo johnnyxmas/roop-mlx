@@ -31,7 +31,19 @@ selected_preview_index = 0
 is_processing = False
 
 list_files_process: list[ProcessEntry] = []
-model_swap_choices = ["InSwapper 128", "ReSwapper 128", "ReSwapper 256"]
+model_swap_choices = [
+    "InSwapper 128",
+    "InSwapper 128 FP16",
+    "ReSwapper 128",
+    "ReSwapper 256",
+    "HyperSwap 1A",
+    "HyperSwap 1B",
+    "HyperSwap 1C",
+    "Ghost 1",
+    "Ghost 2",
+    "Ghost 3",
+    "UniFace",
+]
 
 no_face_choices = [
     "Use untouched original frame",
@@ -966,7 +978,7 @@ def on_preview_frame_changed(
 
     options = ProcessOptions(
         swap_model,
-        get_processing_plugins(mask_engine),
+        get_processing_plugins(mask_engine, swap_model),
         roop.globals.distance_threshold,
         roop.globals.blend_ratio,
         roop.globals.face_swap_mode,
@@ -1068,7 +1080,7 @@ def on_preview_mask(swap_model, frame_num, files, clip_text, mask_engine):
         mask_engine = "mask_xseg"
     options = ProcessOptions(
         swap_model,
-        get_processing_plugins(mask_engine),
+        get_processing_plugins(mask_engine, swap_model),
         roop.globals.distance_threshold,
         roop.globals.blend_ratio,
         "all",

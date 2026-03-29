@@ -184,6 +184,9 @@ def pre_check() -> bool:
                 "https://codeberg.org/roop-unleashed/models/media/branch/main/InSwapper/inswapper_128.onnx",
             ],
             [
+                "https://huggingface.co/facefusion/models-3.0.0/resolve/main/inswapper_128_fp16.onnx",
+            ],
+            [
                 "https://huggingface.co/countfloyd/deepfake/resolve/main/reswapper_128.onnx",
                 "https://codeberg.org/roop-unleashed/models/media/branch/main/ReSwapper/reswapper_128.onnx",
             ],
@@ -330,8 +333,12 @@ def start() -> None:
     batch_process_regular(None, False, None)
 
 
-def get_processing_plugins(masking_engine):
-    processors = {"faceswap": {}}
+def get_processing_plugins(masking_engine, swap_model=None):
+    from roop.ProcessOptions import FF_SWAP_MODELS
+    if swap_model is not None and swap_model in FF_SWAP_MODELS:
+        processors = {"faceswap_ff": {}}
+    else:
+        processors = {"faceswap": {}}
     if masking_engine is not None:
         processors.update({masking_engine: {}})
 
@@ -394,7 +401,7 @@ def batch_process_regular(
         selected_index = 0
     options = ProcessOptions(
         swap_model,
-        get_processing_plugins(masking_engine),
+        get_processing_plugins(masking_engine, swap_model),
         roop.globals.distance_threshold,
         roop.globals.blend_ratio,
         roop.globals.face_swap_mode,

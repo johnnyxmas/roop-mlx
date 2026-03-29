@@ -88,6 +88,7 @@ class ProcessMgr:
 
     plugins = {
         "faceswap": "FaceSwapInsightFace",
+        "faceswap_ff": "FaceSwapFaceFusion",
         "mask_clip2seg": "Mask_Clip2Seg",
         "mask_xseg": "Mask_XSeg",
         "codeformer": "Enhance_CodeFormer",
@@ -160,13 +161,7 @@ class ProcessMgr:
             if p is not None:
                 extoption.update({"devicename": devicename, "device_id": roop.globals.cuda_device_id})
                 if p.type == "swap":
-                    if self.options.swap_modelname == "InSwapper 128":
-                        extoption.update({"modelname": "inswapper_128.onnx"})
-                    elif self.options.swap_modelname == "ReSwapper 128":
-                        extoption.update({"modelname": "reswapper_128.onnx"})
-                    elif self.options.swap_modelname == "ReSwapper 256":
-                        extoption.update({"modelname": "reswapper_256.onnx"})
-
+                    extoption.update({"modelname": self._resolve_modelname(self.options.swap_modelname)})
                 p.Initialize(extoption)
                 newprocessors.append(p)
             else:
@@ -208,6 +203,17 @@ class ProcessMgr:
             if p.type.startswith("frame_"):
                 self.options.frame_processing = True
 
+    INSIGHTFACE_MODEL_FILES = {
+        "InSwapper 128": "inswapper_128.onnx",
+        "InSwapper 128 FP16": "inswapper_128_fp16.onnx",
+        "ReSwapper 128": "reswapper_128.onnx",
+        "ReSwapper 256": "reswapper_256.onnx",
+    }
+
+    def _resolve_modelname(self, swap_modelname: str) -> str:
+        """Return the model filename or display name depending on processor type."""
+        return self.INSIGHTFACE_MODEL_FILES.get(swap_modelname, swap_modelname)
+
     def _build_processors_for_gpu(self, gpu_id: int, options, devicename: str):
         """Create a fresh processor set bound to gpu_id. Returns None if unavailable."""
         import torch
@@ -234,12 +240,7 @@ class ProcessMgr:
                 if p is None:
                     continue
                 if p.type == "swap":
-                    if options.swap_modelname == "InSwapper 128":
-                        extoption_copy["modelname"] = "inswapper_128.onnx"
-                    elif options.swap_modelname == "ReSwapper 128":
-                        extoption_copy["modelname"] = "reswapper_128.onnx"
-                    elif options.swap_modelname == "ReSwapper 256":
-                        extoption_copy["modelname"] = "reswapper_256.onnx"
+                    extoption_copy["modelname"] = self._resolve_modelname(options.swap_modelname)
                 p.Initialize(extoption_copy)
                 new_processors.append(p)
             return new_processors if new_processors else None
@@ -874,6 +875,16 @@ class ProcessMgr:
 
         for p in getattr(self._thread_local, 'processors', self.processors):
             if p.type == "swap":
+                # FF models (ghost/hyperswap/uniface) need the full FaceSet for
+                # access to ref_images (UniFace) and their own embedding pipeline.
+                # InsightFace models receive the individual face object as before.
+                if p.processorname == "faceswap_ff":
+                    swap_source = self.input_face_datas[face_index] if len(self.input_face_datas) > 0 else inputface
+                    # Cache swap_type on options so prepare/normalize dispatch correctly
+                    self.options._ff_swap_type = getattr(p, 'swap_type', 'ghost')
+                else:
+                    swap_source = inputface
+
                 swap_result_frames = []
                 subsample_frames = self.implode_pixel_boost(
                     aligned_img, model_output_size, subsample_total
@@ -881,7 +892,7 @@ class ProcessMgr:
                 for sliced_frame in subsample_frames:
                     for _ in range(0, self.options.num_swap_steps):
                         sliced_frame = self.prepare_crop_frame(sliced_frame)
-                        sliced_frame = p.Run(inputface, target_face, sliced_frame)
+                        sliced_frame = p.Run(swap_source, target_face, sliced_frame)
                         sliced_frame = self.normalize_swap_frame(sliced_frame)
                     swap_result_frames.append(sliced_frame)
                 fake_frame = self.explode_pixel_boost(
@@ -1066,25 +1077,35 @@ class ProcessMgr:
         blur_size = tuple(2 * i + 1 for i in kernel_size)
         return cv2.GaussianBlur(img_matte, blur_size, 0)
 
-    def prepare_crop_frame(self, swap_frame):
-        model_type = "inswapper"
-        model_mean = [0.0, 0.0, 0.0]
-        model_standard_deviation = [1.0, 1.0, 1.0]
+    def _get_swap_type(self):
+        """Return the preprocessing type for the active swap model."""
+        from roop.ProcessOptions import FF_SWAP_MODELS
+        if hasattr(self, 'options') and self.options is not None:
+            if self.options.swap_modelname in FF_SWAP_MODELS:
+                return getattr(self.options, '_ff_swap_type', 'ghost')
+        return "inswapper"
 
-        if model_type == "ghost":
+    def prepare_crop_frame(self, swap_frame):
+        model_type = self._get_swap_type()
+
+        if model_type in ("ghost", "hyperswap"):
             swap_frame = swap_frame[:, :, ::-1] / 127.5 - 1
+            swap_frame = swap_frame.transpose(2, 0, 1)
+            swap_frame = np.expand_dims(swap_frame, axis=0).astype(np.float32)
         else:
+            model_mean = [0.0, 0.0, 0.0]
+            model_standard_deviation = [1.0, 1.0, 1.0]
             swap_frame = swap_frame[:, :, ::-1] / 255.0
-        swap_frame = (swap_frame - model_mean) / model_standard_deviation
-        swap_frame = swap_frame.transpose(2, 0, 1)
-        swap_frame = np.expand_dims(swap_frame, axis=0).astype(np.float32)
+            swap_frame = (swap_frame - model_mean) / model_standard_deviation
+            swap_frame = swap_frame.transpose(2, 0, 1)
+            swap_frame = np.expand_dims(swap_frame, axis=0).astype(np.float32)
         return swap_frame
 
     def normalize_swap_frame(self, swap_frame):
-        model_type = "inswapper"
+        model_type = self._get_swap_type()
         swap_frame = swap_frame.transpose(1, 2, 0)
 
-        if model_type == "ghost":
+        if model_type in ("ghost", "hyperswap"):
             swap_frame = (swap_frame * 127.5 + 127.5).round()
         else:
             swap_frame = (swap_frame * 255.0).round()
