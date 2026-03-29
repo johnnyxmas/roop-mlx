@@ -15,7 +15,7 @@ class FaceSet:
     def AverageEmbeddings(self):
         if len(self.faces) > 1 and self.embeddings_backup is None:
             self.embeddings_backup = self.faces[0]["embedding"]
-            embeddings = [face.embedding for face in self.faces]
+            embeddings = [face.embedding for face in self.faces if face.embedding is not None]
 
             self.faces[0]["embedding"] = np.mean(embeddings, axis=0)
             # try median too?
