@@ -55,13 +55,13 @@ This software is provided for authorized research, academic study, and lawful us
 
 Run the appropriate script for your GPU from the repo root. Each script creates a `venv/` folder and installs all dependencies automatically.
 
-**RTX 50-series or any GPU with CUDA 13 driver:**
+**NVIDIA RTX (any generation with CUDA 13 driver — recommended):**
 
 ```bat
 setup_cuda13.bat
 ```
 
-**RTX 30/40-series (CUDA 12):**
+**NVIDIA RTX (CUDA 12 driver):**
 
 ```bat
 setup_cuda12.bat
@@ -93,8 +93,8 @@ source venv/bin/activate
 
 | GPU | Command |
 | --- | --- |
-| RTX 50-series / CUDA 13 | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130` |
-| RTX 30/40-series / CUDA 12 | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124` |
+| NVIDIA / CUDA 13 (RTX 20-series and newer, recommended) | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130` |
+| NVIDIA / CUDA 12 | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124` |
 | AMD (Windows) | `pip install torch torchvision torchaudio` then use `onnxruntime-directml` below |
 | macOS / CPU | `pip install torch torchvision torchaudio` |
 
@@ -164,16 +164,13 @@ The web UI opens automatically in your browser at `http://localhost:7860`.
 
 - Multi-GPU support: frame workload distributed across all CUDA GPUs simultaneously
 - GPU device selection dropdown in Settings UI (detected automatically at startup)
-- GPEN enhancer now supports 512, 1024, and 2048px resolution variants with matched upscale pipeline
+- GPEN now supports 512, 1024, and 2048px variants with matched upscale pipeline
 - Dynamic face crop size matches enhancer input resolution (no longer hardcoded to 512px)
 - CUDA 13 support: PyTorch 2.11+cu130 and ONNX Runtime CUDA 13 build
-- Upgraded ONNX Runtime to 1.24.4
-- Fixed IO binding allocator crash in multi-GPU mode across all processors
-- Fixed face analysis always running on GPU 0 regardless of selected device
 - Improved FFMPEG error handling and NVENC failure recovery
 - Fixed video output corruption and temp folder cleanup
 - Fixed face swapping for subsequent runs after successful completion
-- Added `setup_cuda13.bat`, `setup_cuda12.bat`, and `roop-floyd.bat` setup/launch scripts
+- Added more setup/launch scripts
 
 **03.01.2025** v4.4.1
 

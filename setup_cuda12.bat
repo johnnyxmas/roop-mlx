@@ -1,6 +1,6 @@
 @echo off
 echo ============================================================
-echo  ROOP-FLOYD Setup - CUDA 12 (RTX 30-series / 40-series)
+echo  ROOP-FLOYD Setup - CUDA 12
 echo ============================================================
 echo.
 
