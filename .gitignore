@@ -1,19 +1,35 @@
-.vs
-.idea
-models
-temp
-__pycache__
+# IDE / editor
+.vs/
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
 *.pth
-/start.bat
-/env
-.vscode
-temp
+
+# Virtual environment
+venv/
+env/
+
+# Project runtime artifacts
+models/
+temp/
 config.yaml
-run.bat
-venv
-start.sh
+config_colab.yaml
+
+# Input / output folders
 src/
 dst/
-/temp/*
-/output/*
-!/output/.gitkeep
+output/*
+!output/.gitkeep
+
+# Windows installer artifacts
+/start.bat
+/run.bat
+/start.sh
+
+# Test scratch files
+test_face.jpg
+test_face_swap_debug.py
+test_face_swap_simple.py
