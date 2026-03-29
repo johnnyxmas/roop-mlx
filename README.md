@@ -2,7 +2,7 @@
 
 Face swap images and video without training, powered by a browser-based GUI.
 
-[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Changelog](#changelog)
+[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Changelog](CHANGELOG.md)
 
 > On first run, models (~2 GB) are downloaded automatically to `models/`.
 
@@ -160,72 +160,7 @@ The web UI opens automatically in your browser at `http://localhost:7860`.
 
 ## Changelog
 
-**2026-03-29** v4.5
-
-- Multi-GPU support: frame workload distributed across all CUDA GPUs simultaneously
-- GPU device selection dropdown in Settings UI (detected automatically at startup)
-- GPEN now supports 512, 1024, and 2048px variants with matched upscale pipeline
-- Dynamic face crop size matches enhancer input resolution (no longer hardcoded to 512px)
-- CUDA 13 support: PyTorch 2.11+cu130 and ONNX Runtime CUDA 13 build
-- Improved FFMPEG error handling and NVENC failure recovery
-- Fixed video output corruption and temp folder cleanup
-- Fixed face swapping for subsequent runs after successful completion
-- Added more setup/launch scripts
-
-**03.01.2025** v4.4.1
-
-- Bugfix: Extras Tab
-- Bugfix: Preview Mask
-- Bugfix: DMDNet working on CUDA only
-- Updated Colab Script to also install CUDNN
-
-**31.12.2024** v4.4.0
-
-- Added random face selection mode
-- Added ReSwapper alternative swap model (128px & 256px output)
-- Video repair added to Extras Tab
-- Updated most packages to newer versions — CUDA >= 12.4 required
-- Several minor bugfixes and QoL changes
-
-**28.09.2024** v4.3.1
-
-- Bugfix: Several possible memory leaks
-- Added different output modes including virtual cam stream
-- New swapping mode: All input faces
-- Average total FPS displayed; setting for autorun
-
-**05.09.2024** v4.2.0
-
-- Added ability to reorder input & target faces
-- New CLI arguments: `--server_share`, `--cuda_device_id`
-- Added mask option and mouth area restoration
-- Added webp image support
-
-**14.07.2024** v4.1.0
-
-- Added subsample upscaling to increase swap resolution
-
-**12.05.2024** v4.0.0
-
-- Added xseg masking to live-cam
-- Added RealESRGAN x2 to frame processors
-- Added colorize, upscale, and misc filters to Extras Tab
-
-**22.04.2024** v3.9.0
-
-- Added DFL XSeg support for partial face occlusion
-- Massive rewrite of swapping architecture
-
-**10.03.2024** v3.5.5
-
-- Replaced RestoreFormer with RestoreFormer++
-- Live Cam recoded to run independently from virtual cam
-
-**08.01.2024** v3.5.0
-
-- Auto rotation of horizontal faces
-- Simple VR option for stereo images/video
-- Added RestoreFormer enhancer
+See [CHANGELOG.md](CHANGELOG.md) for full release history.
 
 ---
 
