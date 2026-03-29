@@ -1,16 +1,5 @@
 # Changelog
 
-## v4.6 — 2025-03-29
-
-- Added InSwapper 128 FP16 swap model (same quality, ~2x faster, half VRAM)
-- Added HyperSwap 1A / 1B / 1C swap models (256px, FaceFusion Labs, best overall quality)
-- Added Ghost 1 / 2 / 3 swap models (256px, ai-forever, better expression/lighting transfer)
-- Added UniFace swap model (256px, improved off-angle face handling)
-- New `FaceSwapFaceFusion` processor handles Ghost/HyperSwap/UniFace with their own ArcFace embedding pipeline (`crossface_ghost.onnx`)
-- Frame preprocessing (normalize/denormalize) now dispatches per model type (ghost/hyperswap vs inswapper)
-- UniFace passes warped source image instead of embedding
-- All new models download on first use; Ghost models share one crossface converter
-
 ## v4.5 — 2025-03-29
 
 - Multi-GPU support: frame workload distributed across all CUDA GPUs simultaneously
@@ -26,6 +15,11 @@
 - Fixed video output corruption and temp folder cleanup
 - Fixed face swapping for subsequent runs after successful completion
 - Added `setup_cuda13.bat`, `setup_cuda12.bat`, and `roop-floyd.bat` setup/launch scripts
+- Added InSwapper 128 FP16 swap model (same quality, ~2x faster, half VRAM)
+- Added HyperSwap 1A / 1B / 1C swap models (256px, best overall quality)
+- Added Ghost 1 / 2 / 3 swap models (256px, better expression/lighting transfer)
+- Added UniFace swap model (256px, improved off-angle face handling)
+- New models auto-download on first use via dedicated `FaceSwapFaceFusion` processor
 
 ## v4.4.1 — 2025-01-03
 
