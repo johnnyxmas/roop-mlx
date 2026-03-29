@@ -52,3 +52,5 @@ VIDEO_CHAIN_PROCESSOR = None
 BATCH_IMAGE_CHAIN_PROCESSOR = None
 
 CFG: Settings = None
+
+multi_gpu = False

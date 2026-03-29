@@ -25,10 +25,12 @@ settings_controls = []
 
 def settings_tab():
     from roop.core import suggest_execution_providers
+    from roop.utilities import get_cuda_device_list
 
     global providerlist
 
     providerlist = suggest_execution_providers()
+    cuda_devices = get_cuda_device_list()
     with gr.Tab("⚙ Settings"):
         with gr.Row():
             with gr.Column():
@@ -85,6 +87,29 @@ def settings_tab():
                         value=roop.globals.CFG.provider,
                         elem_id="provider",
                         interactive=True,
+                    )
+                )
+                current_cuda = (
+                    f"{roop.globals.CFG.cuda_device_id}: {cuda_devices[roop.globals.CFG.cuda_device_id].split(': ', 1)[1]}"
+                    if cuda_devices and roop.globals.CFG.cuda_device_id < len(cuda_devices)
+                    else None
+                )
+                cuda_device_id = gr.Dropdown(
+                    choices=cuda_devices,
+                    label="CUDA Device",
+                    value=current_cuda,
+                    info="GPU to use (requires restart)",
+                    interactive=bool(cuda_devices),
+                    visible=bool(cuda_devices),
+                )
+                settings_controls.append(
+                    gr.Checkbox(
+                        label="Use all GPUs (multi-GPU)",
+                        value=roop.globals.CFG.multi_gpu,
+                        elem_id="multi_gpu",
+                        info="Split frame workload across all CUDA GPUs (requires restart)",
+                        interactive=True,
+                        visible=len(cuda_devices) > 1,
                     )
                 )
                 chk_det_size = gr.Checkbox(
@@ -182,6 +207,10 @@ def settings_tab():
                 button_clean_temp = gr.Button("Clean temp folder")
                 button_apply_settings = gr.Button("Apply Settings")
 
+    cuda_device_id.input(
+        fn=lambda a, b="cuda_device_id": on_settings_changed_misc(int(a.split(":")[0]), b),
+        inputs=[cuda_device_id],
+    )
     chk_det_size.select(fn=on_option_changed)
 
     # Settings

@@ -26,6 +26,7 @@ class Frame_Masking:
             # replace Mac mps with cpu for the moment
             self.devicename = self.plugin_options["devicename"]
             self.devicename = self.devicename.replace("mps", "cpu")
+            self.device_id = int(self.plugin_options.get("device_id", 0))
             model_path = resolve_relative_path("../models/Frame/isnet-general-use.onnx")
             self.model_masking = onnxruntime.InferenceSession(
                 model_path, None, providers=roop.globals.execution_providers
@@ -33,7 +34,7 @@ class Frame_Masking:
             self.model_inputs = self.model_masking.get_inputs()
             model_outputs = self.model_masking.get_outputs()
             self.io_binding = self.model_masking.io_binding()
-            self.io_binding.bind_output(model_outputs[0].name, self.devicename)
+            self.io_binding.bind_output(model_outputs[0].name, self.devicename, self.device_id)
 
     def Run(self, temp_frame: Frame) -> Frame:
         # Pre process:Resize, BGR->RGB, float32 cast

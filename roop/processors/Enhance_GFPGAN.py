@@ -39,6 +39,7 @@ class Enhance_GFPGAN:
             )
             # replace Mac mps with cpu for the moment
             self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")
+            self.device_id = int(self.plugin_options.get("device_id", 0))
 
         self.name = self.model_gfpgan.get_inputs()[0].name
 
@@ -56,7 +57,7 @@ class Enhance_GFPGAN:
 
         io_binding = self.model_gfpgan.io_binding()
         io_binding.bind_cpu_input("input", temp_frame)
-        io_binding.bind_output("1288", self.devicename)
+        io_binding.bind_output("1288", self.devicename, self.device_id)
         self.model_gfpgan.run_with_iobinding(io_binding)
         ort_outs = io_binding.copy_outputs_to_cpu()
         result = ort_outs[0][0]

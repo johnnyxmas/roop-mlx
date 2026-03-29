@@ -26,6 +26,7 @@ class Enhance_RestoreFormerPPlus:
         if self.model_restoreformerpplus is None:
             # replace Mac mps with cpu for the moment
             self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")
+            self.device_id = int(self.plugin_options.get("device_id", 0))
             model_path = resolve_relative_path("../models/restoreformer_plus_plus.onnx")
             self.model_restoreformerpplus = onnxruntime.InferenceSession(
                 model_path, None, providers=roop.globals.execution_providers
@@ -33,7 +34,7 @@ class Enhance_RestoreFormerPPlus:
             self.model_inputs = self.model_restoreformerpplus.get_inputs()
             model_outputs = self.model_restoreformerpplus.get_outputs()
             self.io_binding = self.model_restoreformerpplus.io_binding()
-            self.io_binding.bind_output(model_outputs[0].name, self.devicename)
+            self.io_binding.bind_output(model_outputs[0].name, self.devicename, self.device_id)
 
     def Run(
         self, source_faceset: FaceSet, target_face: Face, temp_frame: Frame

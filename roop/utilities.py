@@ -396,6 +396,15 @@ def has_cuda_device():
     return torch.cuda is not None and torch.cuda.is_available()
 
 
+def get_cuda_device_list() -> list[str]:
+    if not has_cuda_device():
+        return []
+    return [
+        f"{i}: {torch.cuda.get_device_name(i)}"
+        for i in range(torch.cuda.device_count())
+    ]
+
+
 def print_cuda_info():
     try:
         print(

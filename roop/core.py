@@ -204,6 +204,14 @@ def pre_check() -> bool:
                 "https://codeberg.org/roop-unleashed/models/media/branch/main/GPEN/GPEN-BFR-512.onnx",
             ],
             [
+                "https://huggingface.co/countfloyd/deepfake/resolve/main/GPEN-BFR-1024.onnx",
+                "https://codeberg.org/roop-unleashed/models/media/branch/main/GPEN/GPEN-BFR-1024.onnx",
+            ],
+            [
+                "https://huggingface.co/countfloyd/deepfake/resolve/main/GPEN-BFR-2048.onnx",
+                "https://codeberg.org/roop-unleashed/models/media/branch/main/GPEN/GPEN-BFR-2048.onnx",
+            ],
+            [
                 "https://huggingface.co/countfloyd/deepfake/resolve/main/restoreformer_plus_plus.onnx",
                 "https://codeberg.org/roop-unleashed/models/media/branch/main/RestoreFormer/restoreformer_plus_plus.onnx",
             ],
@@ -333,8 +341,10 @@ def get_processing_plugins(masking_engine):
         processors.update({"codeformer": {}})
     elif roop.globals.selected_enhancer == "DMDNet":
         processors.update({"dmdnet": {}})
-    elif roop.globals.selected_enhancer == "GPEN":
-        processors.update({"gpen": {}})
+    elif roop.globals.selected_enhancer in ("GPEN", "GPEN 512", "GPEN 1024", "GPEN 2048"):
+        parts = roop.globals.selected_enhancer.split()
+        res = int(parts[-1]) if len(parts) > 1 else 512
+        processors.update({"gpen": {"resolution": res}})
     elif roop.globals.selected_enhancer == "Restoreformer++":
         processors.update({"restoreformer++": {}})
     return processors
@@ -773,7 +783,10 @@ def run() -> None:
     if not pre_check():
         return
     roop.globals.CFG = Settings("config.yaml")
-    roop.globals.cuda_device_id = roop.globals.startup_args.cuda_device_id
+    if roop.globals.startup_args.cuda_device_id != 0:
+        roop.globals.CFG.cuda_device_id = roop.globals.startup_args.cuda_device_id
+    roop.globals.cuda_device_id = roop.globals.CFG.cuda_device_id
+    roop.globals.multi_gpu = roop.globals.CFG.multi_gpu
     roop.globals.execution_threads = roop.globals.CFG.max_threads
     roop.globals.video_encoder = roop.globals.CFG.output_video_codec
     roop.globals.video_quality = roop.globals.CFG.video_quality

@@ -42,6 +42,8 @@ class Settings:
         self.use_os_temp_folder = self.default_get(data, "use_os_temp_folder", False)
         self.output_show_video = self.default_get(data, "output_show_video", True)
         self.launch_browser = self.default_get(data, "launch_browser", True)
+        self.cuda_device_id = self.default_get(data, "cuda_device_id", 0)
+        self.multi_gpu = self.default_get(data, "multi_gpu", False)
 
     def save(self):
         data = {
@@ -61,6 +63,8 @@ class Settings:
             "output_template": self.output_template,
             "use_os_temp_folder": self.use_os_temp_folder,
             "output_show_video": self.output_show_video,
+            "cuda_device_id": self.cuda_device_id,
+            "multi_gpu": self.multi_gpu,
         }
         with open(self.config_file, "w") as f:
             yaml.dump(data, f)

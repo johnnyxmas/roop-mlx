@@ -36,17 +36,6 @@ def run():
     prepare_environment()
 
     set_display_ui(show_msg)
-    if roop.globals.CFG.provider == "cuda" and util.has_cuda_device() == False:
-        roop.globals.CFG.provider = "cpu"
-
-    roop.globals.execution_providers = decode_execution_providers(
-        [roop.globals.CFG.provider]
-    )
-    gputype = util.get_device()
-    if gputype == "cuda":
-        util.print_cuda_info()
-
-    print(f"Using provider {roop.globals.execution_providers} - Device:{gputype}")
 
     run_server = True
     uii.ui_restart_server = False
@@ -61,6 +50,18 @@ def run():
     """
 
     while run_server:
+        if roop.globals.CFG.provider == "cuda" and util.has_cuda_device() == False:
+            roop.globals.CFG.provider = "cpu"
+        roop.globals.cuda_device_id = roop.globals.CFG.cuda_device_id
+        roop.globals.multi_gpu = roop.globals.CFG.multi_gpu
+        roop.globals.execution_providers = decode_execution_providers(
+            [roop.globals.CFG.provider]
+        )
+        gputype = util.get_device()
+        if gputype == "cuda":
+            util.print_cuda_info()
+        print(f"Using provider {roop.globals.execution_providers} - Device:{gputype}")
+
         server_name = roop.globals.CFG.server_name
         if server_name is None or len(server_name) < 1:
             server_name = None

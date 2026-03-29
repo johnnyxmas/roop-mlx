@@ -23,7 +23,7 @@ import roop.vr_util as vr
 from typing import Any, List, Callable
 from roop.typing import Frame, Face
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Thread, Lock
+from threading import Thread, Lock, local as thread_local
 from queue import Queue
 from tqdm import tqdm
 from roop.ffmpeg_writer import FFMPEG_VideoWriter
@@ -104,6 +104,8 @@ class ProcessMgr:
     def __init__(self, progress):
         if progress is not None:
             self.progress_gradio = progress
+        self._thread_local = thread_local()
+        self.processors_by_gpu = []
 
     def reuseOldProcessor(self, name: str):
         for p in self.processors:
@@ -156,7 +158,7 @@ class ProcessMgr:
                 module = "roop.processors." + classname
                 p = str_to_class(module, classname)
             if p is not None:
-                extoption.update({"devicename": devicename})
+                extoption.update({"devicename": devicename, "device_id": roop.globals.cuda_device_id})
                 if p.type == "swap":
                     if self.options.swap_modelname == "InSwapper 128":
                         extoption.update({"modelname": "inswapper_128.onnx"})
@@ -170,6 +172,14 @@ class ProcessMgr:
             else:
                 print(f"Not using {module}")
         self.processors = newprocessors
+
+        # Multi-GPU: build a second processor set for GPU 1
+        self.processors_by_gpu = [self.processors]
+        if roop.globals.multi_gpu:
+            gpu1 = self._build_processors_for_gpu(1, options, devicename)
+            if gpu1:
+                self.processors_by_gpu.append(gpu1)
+                print(f"Multi-GPU enabled: using {len(self.processors_by_gpu)} GPUs")
 
         if (
             isinstance(self.options.imagemask, dict)
@@ -197,6 +207,48 @@ class ProcessMgr:
         for p in self.processors:
             if p.type.startswith("frame_"):
                 self.options.frame_processing = True
+
+    def _build_processors_for_gpu(self, gpu_id: int, options, devicename: str):
+        """Create a fresh processor set bound to gpu_id. Returns None if unavailable."""
+        import torch
+        from roop.core import decode_execution_providers
+
+        if not torch.cuda.is_available() or gpu_id >= torch.cuda.device_count():
+            return None
+
+        saved_providers = roop.globals.execution_providers
+        saved_device_id = roop.globals.cuda_device_id
+        try:
+            roop.globals.cuda_device_id = gpu_id
+            roop.globals.execution_providers = decode_execution_providers(["cuda"])
+            new_processors = []
+            for key, extoption in options.processors.items():
+                extoption_copy = dict(extoption)
+                extoption_copy["devicename"] = devicename
+                extoption_copy["device_id"] = gpu_id
+                classname = self.plugins.get(key)
+                if classname is None:
+                    continue
+                module = "roop.processors." + classname
+                p = str_to_class(module, classname)
+                if p is None:
+                    continue
+                if p.type == "swap":
+                    if options.swap_modelname == "InSwapper 128":
+                        extoption_copy["modelname"] = "inswapper_128.onnx"
+                    elif options.swap_modelname == "ReSwapper 128":
+                        extoption_copy["modelname"] = "reswapper_128.onnx"
+                    elif options.swap_modelname == "ReSwapper 256":
+                        extoption_copy["modelname"] = "reswapper_256.onnx"
+                p.Initialize(extoption_copy)
+                new_processors.append(p)
+            return new_processors if new_processors else None
+        except Exception as e:
+            print(f"Warning: Could not initialise processors on GPU {gpu_id}: {e}")
+            return None
+        finally:
+            roop.globals.execution_providers = saved_providers
+            roop.globals.cuda_device_id = saved_device_id
 
     def run_batch(self, source_files, target_files, threads: int = 1):
         import gc
@@ -226,6 +278,8 @@ class ProcessMgr:
                 queue = create_queue(source_files)
                 queue_per_future = max(len(source_files) // threads, 1)
                 completed_count = 0
+                chunk_index = 0
+                num_gpus = len(self.processors_by_gpu) if self.processors_by_gpu else 1
                 while not queue.empty():
                     future = executor.submit(
                         self.process_frames,
@@ -233,8 +287,10 @@ class ProcessMgr:
                         target_files,
                         pick_queue(queue, queue_per_future),
                         lambda: self.update_progress(progress),
+                        chunk_index % num_gpus,
                     )
                     futures.append(future)
+                    chunk_index += 1
                 for future in as_completed(futures):
                     future.result()
                     completed_count += 1
@@ -248,7 +304,10 @@ class ProcessMgr:
         target_files: List[str],
         current_files,
         update: Callable[[], None],
+        gpu_index: int = 0,
     ) -> None:
+        if self.processors_by_gpu and gpu_index < len(self.processors_by_gpu):
+            self._thread_local.processors = self.processors_by_gpu[gpu_index]
         for f in current_files:
             if not roop.globals.processing:
                 return
@@ -259,7 +318,7 @@ class ProcessMgr:
                 try:
                     if self.options.frame_processing:
                         frame = temp_frame
-                        for p in self.processors:
+                        for p in getattr(self._thread_local, 'processors', self.processors):
                             frame = p.Run(frame)
                         resimg = frame
                     else:
@@ -301,6 +360,8 @@ class ProcessMgr:
             self.frames_queue[i].put(None)
 
     def process_videoframes(self, threadindex, progress) -> None:
+        if self.processors_by_gpu:
+            self._thread_local.processors = self.processors_by_gpu[threadindex % len(self.processors_by_gpu)]
         while True:
             frame = self.frames_queue[threadindex].get()
             if frame is None:
@@ -311,7 +372,7 @@ class ProcessMgr:
                 try:
                     if self.options.frame_processing:
                         processed_frame = frame
-                        for p in self.processors:
+                        for p in getattr(self._thread_local, 'processors', self.processors):
                             processed_frame = p.Run(processed_frame)
                         resimg = processed_frame
                     else:
@@ -811,7 +872,7 @@ class ProcessMgr:
         fake_frame = aligned_img
         target_face.matrix = M
 
-        for p in self.processors:
+        for p in getattr(self._thread_local, 'processors', self.processors):
             if p.type == "swap":
                 swap_result_frames = []
                 subsample_frames = self.implode_pixel_boost(
@@ -839,6 +900,10 @@ class ProcessMgr:
                 )
 
         upscale = 512
+        for p in getattr(self._thread_local, 'processors', self.processors):
+            if hasattr(p, 'input_resolution'):
+                upscale = p.input_resolution
+                break
         orig_width = fake_frame.shape[1]
         if orig_width != upscale:
             fake_frame = cv2.resize(fake_frame, (upscale, upscale), cv2.INTER_CUBIC)
@@ -1197,9 +1262,14 @@ class ProcessMgr:
         import tempfile
         import shutil
         
-        # Release processors
-        for p in self.processors:
-            p.Release()
+        # Release all GPU processor sets
+        released = set()
+        for gpu_processors in self.processors_by_gpu:
+            for p in gpu_processors:
+                if id(p) not in released:
+                    p.Release()
+                    released.add(id(p))
+        self.processors_by_gpu.clear()
         self.processors.clear()
         
         # Close video/stream writers

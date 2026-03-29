@@ -30,6 +30,7 @@ class FaceSwapInsightFace:
             graph = onnx.load(model_path).graph
             self.emap = onnx.numpy_helper.to_array(graph.initializer[-1])
             self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")
+            self.device_id = int(self.plugin_options.get("device_id", 0))
             self.input_mean = 0.0
             self.input_std = 255.0
             # Optimized session options for better performance
@@ -52,7 +53,7 @@ class FaceSwapInsightFace:
         io_binding = self.model_swap_insightface.io_binding()
         io_binding.bind_cpu_input("target", temp_frame)
         io_binding.bind_cpu_input("source", latent)
-        io_binding.bind_output("output", self.devicename)
+        io_binding.bind_output("output", self.devicename, self.device_id)
         self.model_swap_insightface.run_with_iobinding(io_binding)
         ort_outs = io_binding.copy_outputs_to_cpu()[0]
         return ort_outs[0]

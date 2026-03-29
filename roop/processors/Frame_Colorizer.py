@@ -31,6 +31,7 @@ class Frame_Colorizer:
         if self.model_colorizer is None:
             # replace Mac mps with cpu for the moment
             self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")
+            self.device_id = int(self.plugin_options.get("device_id", 0))
             if self.prev_type == "deoldify_artistic":
                 model_path = resolve_relative_path(
                     "../models/Frame/deoldify_artistic.onnx"
@@ -47,7 +48,7 @@ class Frame_Colorizer:
             self.model_inputs = self.model_colorizer.get_inputs()
             model_outputs = self.model_colorizer.get_outputs()
             self.io_binding = self.model_colorizer.io_binding()
-            self.io_binding.bind_output(model_outputs[0].name, self.devicename)
+            self.io_binding.bind_output(model_outputs[0].name, self.devicename, self.device_id)
 
     def Run(self, input_frame: Frame) -> Frame:
         temp_frame = cv2.cvtColor(input_frame, cv2.COLOR_BGR2GRAY)

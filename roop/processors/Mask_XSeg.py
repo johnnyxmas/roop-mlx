@@ -32,6 +32,7 @@ class Mask_XSeg:
 
             # replace Mac mps with cpu for the moment
             self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")
+            self.device_id = int(self.plugin_options.get("device_id", 0))
 
     def Run(self, img1, keywords: str) -> Frame:
         temp_frame = cv2.resize(img1, (256, 256), cv2.INTER_CUBIC)
@@ -39,7 +40,7 @@ class Mask_XSeg:
         temp_frame = temp_frame[None, ...]
         io_binding = self.model_xseg.io_binding()
         io_binding.bind_cpu_input(self.model_inputs[0].name, temp_frame)
-        io_binding.bind_output(self.model_outputs[0].name, self.devicename)
+        io_binding.bind_output(self.model_outputs[0].name, self.devicename, self.device_id)
         self.model_xseg.run_with_iobinding(io_binding)
         ort_outs = io_binding.copy_outputs_to_cpu()
         result = ort_outs[0][0]

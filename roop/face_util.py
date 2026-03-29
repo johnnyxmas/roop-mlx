@@ -46,7 +46,7 @@ def get_face_analyser() -> Any:
                     allowed_modules=allowed_modules,
                 )
             FACE_ANALYSER.prepare(
-                ctx_id=0,
+                ctx_id=roop.globals.cuda_device_id,
                 det_size=(640, 640) if roop.globals.default_det_size else (320, 320),
             )
     return FACE_ANALYSER

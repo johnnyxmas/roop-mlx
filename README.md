@@ -1,231 +1,249 @@
-# roop-unleashed
+# roop-floyd
 
-This is **unofficial** mirror of repository
+Face swap images and video without training, powered by a browser-based GUI.
 
-Models: <https://codeberg.org/roop-unleashed/models>
+[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Changelog](#changelog)
 
-[Changelog](#changelog) • [Usage](#usage)
+> On first run, models (~2 GB) are downloaded automatically to `models/`.
 
-Uncensored Deepfakes for images and videos without training and an easy-to-use GUI.
+---
 
-### Features
+## Features
 
-- Platform-independant Browser GUI
-- Selection of multiple input/output faces in one go
-- Many different swapping modes, first detected, face selections, by gender
-- Batch processing of images/videos
-- Masking of face occluders using text prompts or automatically
-- Optional Face Upscaler/Restoration using different enhancers
-- Preview swapping from different video frames
-- Live Fake Cam using your webcam
-- Extras Tab for cutting videos etc.
-- Settings - storing configuration for next session
-- Theme Support
+- Browser-based GUI — works on Windows, Linux, and macOS
+- Multiple face swapping modes: first detected, by selection, by gender, random, all input faces
+- ReSwapper model option (128px & 256px) alongside InsightFace inswapper
+- Batch processing of images and video
+- Face occlusion masking via text prompts (CLIP) or XSeg
+- Face enhancers: GFPGAN, CodeFormer, DMDNet, GPEN (512/1024/2048px), RestoreFormer++
+- Subsample upscaling for higher resolution swaps
+- Frame processors: colorizer, upscaler, filters, background removal
+- Live webcam face swap with virtual camera output
+- Multi-GPU support — distribute frame workload across all available CUDA GPUs
+- Per-GPU device selection in Settings (no restart required for single-GPU switch)
+- Extras tab: video cutting, joining, repair, colorization, upscaling
+- Settings persist between sessions via `config.yaml`
+- Theme support
 
-and lots more...
+---
 
-## Disclaimer
+## Disclaimer and Conditions of Use
 
-This project is for technical and academic use only.
-Users of this software are expected to use this software responsibly while abiding the local law. If a face of a real person is being used, users are suggested to get consent from the concerned person and clearly mention that it is a deepfake when posting content online. Developers of this software will not be responsible for actions of end-users.
-**Please do not apply it to illegal and unethical scenarios.**
+This software is provided for authorized research, academic study, and lawful use only. By using this software you agree to the following:
 
-In the event of violation of the legal and ethical requirements of the user's country or region, this code repository is exempt from liability
+1. **Lawful use only.** You are solely responsible for compliance with all applicable laws governing synthetic media, biometric data, privacy, and impersonation.
+2. **Consent required.** Where any identifiable individual's likeness is processed, you must obtain their documented, informed consent before processing, before distribution, and before any public display of outputs.
+3. **Prohibited uses** include: non-consensual intimate imagery, fraud or deception, harassment or defamation, election interference, circumventing identity verification without authorization, or any other unlawful or harmful purpose.
+4. **No warranty.** This software is provided "as is" without warranty of any kind.
+5. **No liability.** The developers and contributors shall not be liable for any damages arising from use or misuse. You agree to indemnify and hold harmless the developers from any claims resulting from your use.
 
-### Installation
+**Do not apply this software to illegal or unethical scenarios.**
 
-Please refer to the [wiki](https://github.com/C0untFloyd/roop-unleashed/wiki).
+---
 
-#### macOS Installation
+## Installation
 
-Simply run the following command. It will check and install all dependencies if necessary.
+### Prerequisites
 
-`/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/PJF16/roop-unleashed/master/installer/macOSinstaller.sh)"`
+- **Python 3.11** — [python.org](https://www.python.org/downloads/)
+- **ffmpeg** on your system PATH — [ffmpeg.org](https://ffmpeg.org/download.html) (required for video processing)
+- A virtual environment is strongly recommended to isolate dependencies
 
-### Usage
+---
 
-- Windows: run the `windows_run.bat` from the Installer.
-- Linux: `python run.py`
-- macOS: `sh runMacOS.sh`
-- Dockerfile:
+### Windows — Quick Setup (Recommended)
 
-  ```shell
-  docker build -t roop-unleashed . && docker run -t \
-    -p 7860:7860 \
-    -v ./config.yaml:/app/config.yaml \
-    -v ./models:/app/models \
-    -v ./temp:/app/temp \
-    -v ./output:/app/output \
-    roop-unleashed
-  ```
+Run the appropriate script for your GPU from the repo root. Each script creates a `venv/` folder and installs all dependencies automatically.
 
-Additional commandline arguments are currently unsupported and settings should be done via the UI.
+**RTX 50-series or any GPU with CUDA 13 driver:**
 
-> Note: When you run this program for the first time, it will download some models roughly ~2Gb in size.
+```bat
+setup_cuda13.bat
+```
 
-### Changelog
+**RTX 30/40-series (CUDA 12):**
+
+```bat
+setup_cuda12.bat
+```
+
+Then launch with:
+
+```bat
+roop-floyd.bat
+```
+
+---
+
+### Manual Setup
+
+**Step 1 — Create and activate a virtual environment (strongly recommended):**
+
+```bash
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+
+# Linux / macOS
+source venv/bin/activate
+```
+
+**Step 2 — Install PyTorch:**
+
+| GPU | Command |
+| --- | --- |
+| RTX 50-series / CUDA 13 | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130` |
+| RTX 30/40-series / CUDA 12 | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124` |
+| AMD (Windows) | `pip install torch torchvision torchaudio` then use `onnxruntime-directml` below |
+| macOS / CPU | `pip install torch torchvision torchaudio` |
+
+**Step 3 — Install core dependencies:**
+
+```bash
+pip install uv
+uv pip install numpy==1.26.4 opencv-python-headless onnx insightface albucore psutil tqdm ftfy regex pyvirtualcam
+```
+
+**Step 4 — Install ONNX Runtime:**
+
+| Platform | Command |
+| --- | --- |
+| CUDA 13 | `pip install onnxruntime onnxruntime-gpu --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-13/pypi/simple/` |
+| CUDA 12 | `pip install onnxruntime onnxruntime-gpu` |
+| AMD (Windows) | `pip install onnxruntime onnxruntime-directml` |
+| macOS Apple Silicon | `pip install onnxruntime onnxruntime-silicon` |
+| CPU only | `pip install onnxruntime` |
+
+**Step 5 — Final packages:**
+
+```bash
+pip install --force-reinstall pydantic==2.10.6
+pip install gradio==5.13.0
+```
+
+---
+
+### Linux
+
+```bash
+python -m venv venv && source venv/bin/activate
+pip install uv
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+uv pip install numpy==1.26.4 opencv-python-headless onnx insightface albucore psutil tqdm ftfy regex pyvirtualcam onnxruntime onnxruntime-gpu
+pip install --force-reinstall pydantic==2.10.6
+pip install gradio==5.13.0
+python run.py
+```
+
+---
+
+## Usage
+
+**Windows:** `roop-floyd.bat` (or `python run.py` with venv active)
+
+**Linux / macOS:**
+
+```bash
+source venv/bin/activate
+python run.py
+```
+
+**CLI flags:**
+
+- `--server_share` — expose via Gradio public URL (Hugging Face Spaces / remote access)
+- `--cuda_device_id <N>` — select GPU by index (default: 0; overrides config)
+
+The web UI opens automatically in your browser at `http://localhost:7860`.
+
+---
+
+## Changelog
+
+**2026-03-29** v4.5
+
+- Multi-GPU support: frame workload distributed across all CUDA GPUs simultaneously
+- GPU device selection dropdown in Settings UI (detected automatically at startup)
+- GPEN enhancer now supports 512, 1024, and 2048px resolution variants with matched upscale pipeline
+- Dynamic face crop size matches enhancer input resolution (no longer hardcoded to 512px)
+- CUDA 13 support: PyTorch 2.11+cu130 and ONNX Runtime CUDA 13 build
+- Upgraded ONNX Runtime to 1.24.4
+- Fixed IO binding allocator crash in multi-GPU mode across all processors
+- Fixed face analysis always running on GPU 0 regardless of selected device
+- Improved FFMPEG error handling and NVENC failure recovery
+- Fixed video output corruption and temp folder cleanup
+- Fixed face swapping for subsequent runs after successful completion
+- Added `setup_cuda13.bat`, `setup_cuda12.bat`, and `roop-floyd.bat` setup/launch scripts
 
 **03.01.2025** v4.4.1
 
-Bugfix: Extras Tab
-Bugfix: Preview Mask
-Bugfix: DMDNet working on Cuda only
-Updated Colab Script to also install CUDNN
+- Bugfix: Extras Tab
+- Bugfix: Preview Mask
+- Bugfix: DMDNet working on CUDA only
+- Updated Colab Script to also install CUDNN
 
-**31.12.2024** v4.4.0 Hotfix
-
-Bugfix: Updated Colab to use present Cuda Drivers
-Bugfix: Live-Cam not working because of new face swapper
-Set default swapping model back to Insightface
-
-Happy New Year!
-
-**30.12.2024** v4.4.0
+**31.12.2024** v4.4.0
 
 - Added random face selection mode
-- Added alternative face swapping model with 128px & 256 px output ([ReSwapper](https://github.com/somanchiu/ReSwapper/tree/main))
+- Added ReSwapper alternative swap model (128px & 256px output)
 - Video repair added to Extras Tab
-- Updated most packages to newer versions. CUDA >= 12.4 now required!
-- Several minor bugfixes and QoL Changes
+- Updated most packages to newer versions — CUDA >= 12.4 required
+- Several minor bugfixes and QoL changes
 
-**28.9.2024** v4.3.1
+**28.09.2024** v4.3.1
 
 - Bugfix: Several possible memory leaks
-- Added different output modes, e.g. to virtual cam stream
-- New swapping mode "All input faces"
-- Average total fps displayed and setting for autorun
+- Added different output modes including virtual cam stream
+- New swapping mode: All input faces
+- Average total FPS displayed; setting for autorun
 
-**16.9.2024** v4.2.8
+**05.09.2024** v4.2.0
 
-- Bugfix: Starting roop-unleashed without NVIDIA gpu but cuda option enabled
-- Bugfix: Target Faces couldn't be moved left/right
-- Bugfix: Enhancement and upscaling working again in virtual cam
-- Corrupt videos caught when adding to target files, displaying warning msg
-- Source Files Component cleared after face detection to release temp files
-- Added masking and mouth restore options to virtual cam
-
-**9.9.2024** v4.2.3
-
-- Hotfix for gradio pydantic issue with fastapi
-- Upgraded to Gradio 4.43 hoping it will fix remaining issues
-- Added new action when no face detected -> use last swapped
-- Specified image format for image controls - opening new tabs on preview images possible again!
-- Hardcoded image output format for livecam to jpeg - might be faster than previous webp
-- Chain events to be only executed if previous was a success
-
-**5.9.2024** v4.2.0
-
-- Added ability to move input & target faces order
-- New CLI Arguments override settings
-- Small UI changes to faceswapping tab
-- Added mask option and code for restoration of original mouth area
-- Updated gradio to v4.42.0
-- Added CLI Arguments --server_share and --cuda_device_id
+- Added ability to reorder input & target faces
+- New CLI arguments: `--server_share`, `--cuda_device_id`
+- Added mask option and mouth area restoration
 - Added webp image support
-
-**15.07.2024** v4.1.1
-
-- Bugfix: Post-processing after swapping
 
 **14.07.2024** v4.1.0
 
 - Added subsample upscaling to increase swap resolution
-- Upgraded gradio
 
 **12.05.2024** v4.0.0
 
-- Bugfix: Unnecessary init every frame in live-cam
-- Bugfix: Installer downloading insightface package each run
 - Added xseg masking to live-cam
-- Added realesrganx2 to frame processors
-- Upgraded some requirements
-- Added subtypes and different model support to frame processors
-- Allow frame processors to change resolutions of videos
-- Different OpenCV Cap for MacOS Virtual Cam
-- Added complete frame processing to extras tab
-- Colorize, upscale and misc filters added
+- Added RealESRGAN x2 to frame processors
+- Added colorize, upscale, and misc filters to Extras Tab
 
 **22.04.2024** v3.9.0
 
-- Bugfix: Face detection bounding box corrupt values at weird angles
-- Rewrote mask previewing to work with every model
-- Switching mask engines toggles text interactivity
-- Clearing target files, resets face selection dropdown
-- Massive rewrite of swapping architecture, needed for xseg implementation
-- Added DFL Xseg Support for partial face occlusion
-- Face masking only runs when there is a face detected
-- Removed unnecessary toggle checkbox for text masking
-
-**22.03.2024** v3.6.5
-
-- Bugfix: Installer pulling latest update on first installation
-- Bugfix: Regression issue, blurring/erosion missing from face swap
-- Exposed erosion and blur amounts to UI
-- Using same values for manual masking too
-
-**20.03.2024** v3.6.3
-
-- Bugfix: Workaround for Gradio Slider Change Bug
-- Bugfix: CSS Styling to fix Gradio Image Height Bug
-- Made face swapping mask offsets resolution independant
-- Show offset mask as overlay
-- Changed layout for masking
-
-**18.03.2024** v3.6.0
-
-- Updated to Gradio 4.21.0 - requiring many changes under the hood
-- New manual masking (draw the mask yourself)
-- Extras Tab, streamlined cutting/joining videos
-- Re-added face selection by gender (on-demand loading, default turned off)
-- Removed unnecessary activate live-cam option
-- Added time info to preview frame and changed frame slider event to allow faster changes
+- Added DFL XSeg support for partial face occlusion
+- Massive rewrite of swapping architecture
 
 **10.03.2024** v3.5.5
 
-- Bugfix: Installer Path Env
-- Bugfix: file attributes
-- Video processing checks for presence of ffmpeg and displays warning if not found
-- Removed gender + age detection to speed up processing. Option removed from UI
-- Replaced restoreformer with restoreformer++
-- Live Cam recoded to run separate from virtual cam and without blocking controls
-- Swapping with only 1 target face allows selecting from several input faces
+- Replaced RestoreFormer with RestoreFormer++
+- Live Cam recoded to run independently from virtual cam
 
 **08.01.2024** v3.5.0
 
-- Bugfix: wrong access options when creating folders
-- New auto rotation of horizontal faces, fixing bad landmark positions (expanded on PR 364)
-- Simple VR Option for stereo Images/Movies, best used in selected face mode
-- Added RestoreFormer Enhancer - https://github.com/wzhouxiff/RestoreFormer
-- Bumped up package versions for onnx/Torch etc.
+- Auto rotation of horizontal faces
+- Simple VR option for stereo images/video
+- Added RestoreFormer enhancer
 
-**16.10.2023** v3.3.4
+---
 
-**11.8.2023** v2.7.0
+## Acknowledgements
 
-Initial Gradio Version - old TkInter Version now deprecated
+Built on ideas, code, and models from:
 
-- Re-added unified padding to face enhancers
-- Fixed DMDNet for all resolutions
-- Selecting target face now automatically switches swapping mode to selected
-- GPU providers are correctly set using the GUI (needs restart currently)
-- Local output folder can be opened from page
-- Unfinished extras functions disabled for now
-- Installer checks out specific commit, allowing to go back to first install
-- Updated readme for new gradio version
-- Updated Colab
-
-# Acknowledgements
-
-Lots of ideas, code or pre-trained models borrowed from the following projects:
-
-https://github.com/deepinsight/insightface<br/>
-https://github.com/s0md3v/roop<br/>
-https://github.com/AUTOMATIC1111/stable-diffusion-webui<br/> 
-https://github.com/Hillobar/Rope<br/>
-https://github.com/TencentARC/GFPGAN<br/>
-https://github.com/kadirnar/codeformer-pip<br/>
-https://github.com/csxmli2016/DMDNet<br/>
-https://github.com/glucauze/sd-webui-faceswaplab<br/>
-https://github.com/ykk648/face_power<br/>
+- [InsightFace](https://github.com/deepinsight/insightface)
+- [roop](https://github.com/s0md3v/roop)
+- [roop-unleashed](https://github.com/C0untFloyd/roop-unleashed)
+- [Rope](https://github.com/Hillobar/Rope)
+- [GFPGAN](https://github.com/TencentARC/GFPGAN)
+- [CodeFormer](https://github.com/kadirnar/codeformer-pip)
+- [DMDNet](https://github.com/csxmli2016/DMDNet)
+- [ReSwapper](https://github.com/somanchiu/ReSwapper)
+- [stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui)
 
 Thanks to all developers!

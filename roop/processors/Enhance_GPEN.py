@@ -20,17 +20,19 @@ class Enhance_GPEN:
 
     def Initialize(self, plugin_options: dict):
         if self.plugin_options is not None:
-            if self.plugin_options["devicename"] != plugin_options["devicename"]:
+            if (self.plugin_options["devicename"] != plugin_options["devicename"]
+                    or self.plugin_options.get("resolution", 512) != plugin_options.get("resolution", 512)):
                 self.Release()
 
         self.plugin_options = plugin_options
         if self.model_gpen is None:
-            model_path = resolve_relative_path("../models/GPEN-BFR-512.onnx")
+            self.input_resolution = self.plugin_options.get("resolution", 512)
+            model_path = resolve_relative_path(f"../models/GPEN-BFR-{self.input_resolution}.onnx")
             self.model_gpen = onnxruntime.InferenceSession(
                 model_path, None, providers=roop.globals.execution_providers
             )
-            # replace Mac mps with cpu for the moment
             self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")
+            self.device_id = int(self.plugin_options.get("device_id", 0))
 
         self.name = self.model_gpen.get_inputs()[0].name
 
@@ -39,7 +41,7 @@ class Enhance_GPEN:
     ) -> Frame:
         # preprocess
         input_size = temp_frame.shape[1]
-        temp_frame = cv2.resize(temp_frame, (512, 512), cv2.INTER_CUBIC)
+        temp_frame = cv2.resize(temp_frame, (self.input_resolution, self.input_resolution), cv2.INTER_CUBIC)
 
         temp_frame = cv2.cvtColor(temp_frame, cv2.COLOR_BGR2RGB)
         temp_frame = temp_frame.astype("float32") / 255.0
@@ -48,7 +50,7 @@ class Enhance_GPEN:
 
         io_binding = self.model_gpen.io_binding()
         io_binding.bind_cpu_input("input", temp_frame)
-        io_binding.bind_output("output", self.devicename)
+        io_binding.bind_output("output", self.devicename, self.device_id)
         self.model_gpen.run_with_iobinding(io_binding)
         ort_outs = io_binding.copy_outputs_to_cpu()
         result = ort_outs[0][0]
