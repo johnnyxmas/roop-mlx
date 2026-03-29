@@ -18,7 +18,6 @@ from roop.utilities import (
     str_to_class,
     shuffle_array,
 )
-import roop.vr_util as vr
 
 from typing import Any, List, Callable
 from roop.typing import Frame, Face
@@ -553,7 +552,7 @@ class ProcessMgr:
                     gpu_cleanup_needed = True
                     print(f"WARNING: GPU memory usage ({gpu_usage_percent:.1f}%) is critically high. Forcing GPU cleanup...")
                     
-            except Exception as e:
+            except Exception:
                 gpu_memory_info = ", GPU: N/A"
         
         # System RAM cleanup
@@ -755,7 +754,6 @@ class ProcessMgr:
 
         center_x = width // 2.0
         start_x = original_face.bbox[0]
-        end_x = original_face.bbox[2]
         bbox_center_x = start_x + (bounding_box_width // 2.0)
 
         # need to leverage the array of landmarks as decribed here:
@@ -785,7 +783,6 @@ class ProcessMgr:
 
     def auto_rotate_frame(self, original_face, frame: Frame):
         target_face = original_face
-        original_frame = frame
 
         rotation_action = self.rotation_action(original_face, frame)
 
@@ -1346,13 +1343,11 @@ class ProcessMgr:
                     roop.globals.torch.cuda.synchronize()
                     roop.globals.torch.cuda.ipc_collect()
                 gc.collect()
-        except Exception as e:
-            # Silently ignore GPU cleanup errors to avoid disrupting processing
+        except Exception:
             pass
 
     def _cleanup_gpu_memory_light(self):
         """Ultra-light GPU memory cleanup that avoids any interference with encoding"""
-        import gc
         import roop.globals
         
         try:
@@ -1363,6 +1358,5 @@ class ProcessMgr:
                 # Only empty cache without any synchronization or blocking operations
                 roop.globals.torch.cuda.empty_cache()
                 # Skip garbage collection during video processing to avoid delays
-        except Exception as e:
-            # Silently ignore GPU cleanup errors to avoid disrupting processing
+        except Exception:
             pass

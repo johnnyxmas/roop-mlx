@@ -320,18 +320,6 @@ def update_status(message: str) -> None:
         call_display_ui(message)
 
 
-def start() -> None:
-    if roop.globals.headless:
-        print("Headless mode currently unsupported - starting UI!")
-        # faces = extract_face_images(roop.globals.source_path,  (False, 0))
-        # roop.globals.INPUT_FACES.append(faces[roop.globals.source_face_index])
-        # faces = extract_face_images(roop.globals.target_path,  (False, util.has_image_extension(roop.globals.target_path)))
-        # roop.globals.TARGET_FACES.append(faces[roop.globals.target_face_index])
-        # if 'face_enhancer' in roop.globals.frame_processors:
-        #     roop.globals.selected_enhancer = 'GFPGAN'
-
-    batch_process_regular(None, False, None)
-
 
 def get_processing_plugins(masking_engine, swap_model=None):
     from roop.ProcessOptions import FF_SWAP_MODELS

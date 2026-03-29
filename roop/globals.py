@@ -15,11 +15,9 @@ autorotate_faces = None
 vr_mode = None
 skip_audio = None
 wait_after_extraction = None
-many_faces = None
 use_batch = None
 source_face_index = 0
 target_face_index = 0
-face_position = None
 video_encoder = None
 video_quality = None
 max_memory = None
@@ -41,15 +39,8 @@ processing = False
 g_current_face_analysis = None
 g_desired_face_analysis = None
 
-FACE_ENHANCER = None
-
 INPUT_FACESETS = []
 TARGET_FACES = []
-
-
-IMAGE_CHAIN_PROCESSOR = None
-VIDEO_CHAIN_PROCESSOR = None
-BATCH_IMAGE_CHAIN_PROCESSOR = None
 
 CFG: Settings = None
 

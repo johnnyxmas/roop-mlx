@@ -4,7 +4,6 @@ import torch
 import threading
 from torchvision import transforms
 from clip.clipseg import CLIPDensePredT
-import numpy as np
 
 from roop.typing import Frame
 

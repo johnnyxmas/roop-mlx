@@ -1,4 +1,3 @@
-import threading
 from typing import Any
 import insightface
 
@@ -12,9 +11,6 @@ from roop.capturer import get_video_frame
 from roop.utilities import resolve_relative_path, conditional_thread_semaphore
 
 FACE_ANALYSER = None
-# THREAD_LOCK_ANALYSER = threading.Lock()
-# THREAD_LOCK_SWAPPER = threading.Lock()
-FACE_SWAPPER = None
 
 
 def get_face_analyser() -> Any:
@@ -231,26 +227,6 @@ arcface_dst = np.array(
     dtype=np.float32,
 )
 
-
-""" def estimate_norm(lmk, image_size=112):
-    assert lmk.shape == (5, 2)
-    if image_size % 112 == 0:
-        ratio = float(image_size) / 112.0
-        diff_x = 0
-    elif image_size % 128 == 0:
-        ratio = float(image_size) / 128.0
-        diff_x = 8.0 * ratio
-    elif image_size % 512 == 0:
-        ratio = float(image_size) / 512.0
-        diff_x = 32.0 * ratio
-
-    dst = arcface_dst * ratio
-    dst[:, 0] += diff_x
-    tform = trans.SimilarityTransform()
-    tform.estimate(lmk, dst)
-    M = tform.params[0:2, :]
-    return M
- """
 
 
 def estimate_norm(lmk, image_size=112):
