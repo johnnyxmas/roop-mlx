@@ -1085,7 +1085,7 @@ class ProcessMgr:
     def prepare_crop_frame(self, swap_frame):
         model_type = self._get_swap_type()
 
-        if model_type in ("ghost", "hyperswap"):
+        if model_type in ("ghost", "hyperswap", "uniface"):
             swap_frame = swap_frame[:, :, ::-1] / 127.5 - 1
             swap_frame = swap_frame.transpose(2, 0, 1)
             swap_frame = np.expand_dims(swap_frame, axis=0).astype(np.float32)
@@ -1102,7 +1102,7 @@ class ProcessMgr:
         model_type = self._get_swap_type()
         swap_frame = swap_frame.transpose(1, 2, 0)
 
-        if model_type in ("ghost", "hyperswap"):
+        if model_type in ("ghost", "hyperswap", "uniface"):
             swap_frame = (swap_frame * 127.5 + 127.5).round()
         else:
             swap_frame = (swap_frame * 255.0).round()

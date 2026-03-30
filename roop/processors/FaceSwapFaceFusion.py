@@ -162,7 +162,6 @@ class FaceSwapFaceFusion:
             source_face = source_faceset
             ref_images = []
 
-        inputs = self.model_swap.get_inputs()
         io_binding = self.model_swap.io_binding()
 
         if self.swap_type in ("ghost", "hyperswap"):
@@ -173,8 +172,8 @@ class FaceSwapFaceFusion:
             if not ref_images:
                 return temp_frame
             source_crop = self._warp_face_ffhq(source_face.kps, ref_images[0])
-            io_binding.bind_cpu_input(inputs[0].name, source_crop)
-            io_binding.bind_cpu_input(inputs[1].name, temp_frame)
+            io_binding.bind_cpu_input("target", temp_frame)
+            io_binding.bind_cpu_input("source", source_crop)
 
         io_binding.bind_output(
             self.model_swap.get_outputs()[0].name, self.devicename, self.device_id
