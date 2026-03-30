@@ -167,8 +167,8 @@ class FaceSwapFaceFusion:
 
         if self.swap_type in ("ghost", "hyperswap"):
             embedding = self._convert_embedding(source_face.normed_embedding)
-            io_binding.bind_cpu_input(inputs[0].name, embedding)
-            io_binding.bind_cpu_input(inputs[1].name, temp_frame)
+            io_binding.bind_cpu_input("target", temp_frame)
+            io_binding.bind_cpu_input("source", embedding)
         elif self.swap_type == "uniface":
             if not ref_images:
                 return temp_frame
