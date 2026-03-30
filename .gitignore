@@ -16,7 +16,6 @@ env/
 models/
 temp/
 config.yaml
-config_colab.yaml
 
 # Input / output folders
 output/*
@@ -28,6 +27,4 @@ output/*
 /start.sh
 
 # Test scratch files
-test_face.jpg
-test_face_swap_debug.py
-test_face_swap_simple.py
+test_*
