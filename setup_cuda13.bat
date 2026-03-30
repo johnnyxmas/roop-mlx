@@ -26,7 +26,8 @@ echo Installing core dependencies...
 uv pip install numpy==1.26.4 opencv-python-headless onnx insightface albucore psutil tqdm ftfy regex pyvirtualcam
 
 echo Installing ONNX Runtime (CUDA 13 build)...
-pip install --no-cache-dir onnxruntime onnxruntime-gpu --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-13/pypi/simple/
+pip install --no-cache-dir onnxruntime
+pip install --no-cache-dir onnxruntime-gpu --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-13/pypi/simple/
 
 echo Installing Gradio and pinning pydantic...
 pip install --force-reinstall pydantic==2.10.6

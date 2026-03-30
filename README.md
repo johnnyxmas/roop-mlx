@@ -109,7 +109,7 @@ uv pip install numpy==1.26.4 opencv-python-headless onnx insightface albucore ps
 
 | Platform | Command |
 | --- | --- |
-| CUDA 13 | `pip install onnxruntime onnxruntime-gpu --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-13/pypi/simple/` |
+| CUDA 13 | `pip install onnxruntime` then `pip install --no-cache-dir onnxruntime-gpu --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-13/pypi/simple/` |
 | CUDA 12.8 | `pip install onnxruntime onnxruntime-gpu` |
 | AMD (Windows) | `pip install onnxruntime onnxruntime-directml` |
 | macOS Apple Silicon | `pip install onnxruntime onnxruntime-silicon` |
