@@ -715,6 +715,7 @@ def on_srcfile_changed(srcfiles, progress=gr.Progress()):
                 face = f[0]
                 face.mask_offsets = (0, 0, 0, 0, 1, 20)
                 face_set.faces.append(face)
+                face_set.ref_images.append(get_image_frame(roop.globals.source_path))
                 image = util.convert_to_gradio(f[1])
                 ui.globals.ui_input_thumbs.append(image)
                 roop.globals.INPUT_FACESETS.append(face_set)
