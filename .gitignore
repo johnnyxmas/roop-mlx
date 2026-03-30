@@ -3,6 +3,10 @@
 .idea/
 .vscode/
 
+# Claude
+CLAUDE.md
+.claude/
+
 # Python
 __pycache__/
 *.py[cod]
