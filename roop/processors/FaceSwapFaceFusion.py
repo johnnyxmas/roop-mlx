@@ -146,8 +146,7 @@ class FaceSwapFaceFusion:
     def _warp_face_ffhq(self, kps: np.ndarray, source_image: np.ndarray, size: int = 256) -> np.ndarray:
         scale = size / 512.0
         dst = FFHQ_LANDMARKS_512 * scale
-        tform = trans.SimilarityTransform()
-        tform.estimate(kps, dst)
+        tform = trans.SimilarityTransform.from_estimate(kps, dst)
         M = tform.params[0:2, :]
         warped = cv2.warpAffine(source_image, M, (size, size), borderValue=0.0)
         warped = warped[:, :, ::-1] / 127.5 - 1

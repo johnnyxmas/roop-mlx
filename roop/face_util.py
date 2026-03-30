@@ -252,8 +252,7 @@ def estimate_norm(lmk, image_size=112):
         dst[:, 0] += 1.5
         dst[:, 1] += 1.5
 
-    tform = trans.SimilarityTransform()
-    tform.estimate(lmk, dst)
+    tform = trans.SimilarityTransform.from_estimate(lmk, dst)
     M = tform.params[0:2, :]
     return M
 
