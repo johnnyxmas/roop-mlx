@@ -22,6 +22,10 @@ pip install --force-reinstall pydantic==2.10.6
 uv pip install -r requirements.txt
 pip install gradio==5.13.0
 
+echo Downloading models...
+python download_models.py
+if errorlevel 1 ( echo WARNING: Some models failed to download. They will be retried on first run. )
+
 echo.
 echo ============================================================
 echo  Setup complete! Run roop-floyd.bat to start.
