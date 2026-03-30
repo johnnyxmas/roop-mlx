@@ -1,25 +1,37 @@
 # Changelog
 
-## v4.5 — 2025-03-29
+## v4.5 — 2026-03-29
 
 - Multi-GPU support: frame workload distributed across all CUDA GPUs simultaneously
 - GPU device selection dropdown in Settings UI (detected automatically at startup)
 - GPEN now supports 512, 1024, and 2048px variants with matched upscale pipeline
 - Dynamic face crop size matches enhancer input resolution (no longer hardcoded to 512px)
 - CUDA 13 support: PyTorch 2.11+cu130 and ONNX Runtime CUDA 13 build
+- CUDA 12.8 support via `setup_cuda12.bat`
 - Upgraded ONNX Runtime to 1.24.4
-- Fixed IO binding allocator crash in multi-GPU mode across all processors
-- Fixed face analysis always running on GPU 0 regardless of selected device
-- Fixed null embeddings crash in FaceSet when averaging across multiple source faces
-- Improved FFMPEG error handling and NVENC failure recovery
-- Fixed video output corruption and temp folder cleanup
-- Fixed face swapping for subsequent runs after successful completion
-- Added `setup_cuda13.bat`, `setup_cuda12.bat`, and `roop-floyd.bat` setup/launch scripts
 - Added InSwapper 128 FP16 swap model (same quality, ~2x faster, half VRAM)
 - Added HyperSwap 1A / 1B / 1C swap models (256px, best overall quality)
 - Added Ghost 1 / 2 / 3 swap models (256px, better expression/lighting transfer)
 - Added UniFace swap model (256px, improved off-angle face handling)
 - New models auto-download on first use via dedicated `FaceSwapFaceFusion` processor
+- Models now download during setup instead of first run
+- InSwapper 128 fp32 labeled as "(CPU)" in model dropdown
+- Added `setup_cuda13.bat`, `setup_cuda12.bat`, and `roop-floyd.bat` setup/launch scripts
+- Added `download_models.py` for pre-downloading all models during setup
+- Removed all Codeberg fallback URLs; all models now download from HuggingFace/GitHub
+- Fixed IO binding allocator crash in multi-GPU mode across all processors
+- Fixed face analysis always running on GPU 0 regardless of selected device
+- Fixed null embeddings crash in FaceSet when averaging across multiple source faces
+- Fixed download crash when a model URL returns 404
+- Fixed GPEN 1024/2048 download (now sourced from facefusion/models-3.0.0)
+- Fixed Ghost/HyperSwap input binding order (target=frame, source=embedding)
+- Fixed UniFace preprocessing and input binding
+- Fixed swap crash when source face data is None or empty
+- Improved FFMPEG error handling and NVENC failure recovery
+- Fixed video output corruption and temp folder cleanup
+- Fixed face swapping for subsequent runs after successful completion
+- Removed dead code: unused globals, imports, deprecated files, and upstream leftovers
+- Pinned breakage-prone dependencies (pillow, markupsafe, scipy, scikit-image)
 
 ## v4.4.1 — 2025-01-03
 
