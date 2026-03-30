@@ -1,10 +1,13 @@
 import os
+from typing import Optional, Union
+
 import numpy as np
 import onnxruntime
 import cv2
 from skimage import transform as trans
 import roop.globals
 
+from roop.FaceSet import FaceSet
 from roop.typing import Face, Frame
 from roop.utilities import resolve_relative_path, conditional_download
 
@@ -20,13 +23,13 @@ FFHQ_LANDMARKS_512 = np.array([
 
 
 class FaceSwapFaceFusion:
-    plugin_options: dict = None
-    model_swap = None
-    model_crossface = None
-    devicename = None
-    device_id = 0
-    swap_type = None
-    preprocessing = "ghost"
+    plugin_options: Optional[dict] = None
+    model_swap: Optional[onnxruntime.InferenceSession] = None
+    model_crossface: Optional[onnxruntime.InferenceSession] = None
+    devicename: Optional[str] = None
+    device_id: int = 0
+    swap_type: Optional[str] = None
+    preprocessing: str = "ghost"
 
     processorname = "faceswap_ff"
     type = "swap"
@@ -151,7 +154,7 @@ class FaceSwapFaceFusion:
         warped = warped.transpose(2, 0, 1)
         return np.expand_dims(warped, axis=0).astype(np.float32)
 
-    def Run(self, source_faceset, target_face: Face, temp_frame: Frame) -> Frame:
+    def Run(self, source_faceset: Union[FaceSet, Face], target_face: Face, temp_frame: Frame) -> Frame:
         if hasattr(source_faceset, 'faces'):
             source_face = source_faceset.faces[0]
             ref_images = getattr(source_faceset, 'ref_images', [])

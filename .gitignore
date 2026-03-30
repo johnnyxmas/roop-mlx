@@ -19,8 +19,6 @@ config.yaml
 config_colab.yaml
 
 # Input / output folders
-src/
-dst/
 output/*
 !output/.gitkeep
 
