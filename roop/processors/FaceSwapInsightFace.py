@@ -47,7 +47,7 @@ class FaceSwapInsightFace:
             )
 
     def Run(self, source_face, target_face: Face, temp_frame: Frame) -> Frame:
-        if hasattr(source_face, 'faces'):
+        if hasattr(source_face, 'faces') and source_face.faces:
             source_face = source_face.faces[0]
         latent = source_face.normed_embedding.reshape((1, -1))
         latent = np.dot(latent, self.emap)

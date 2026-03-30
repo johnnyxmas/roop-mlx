@@ -155,7 +155,7 @@ class FaceSwapFaceFusion:
         return np.expand_dims(warped, axis=0).astype(np.float32)
 
     def Run(self, source_faceset: Union[FaceSet, Face], target_face: Face, temp_frame: Frame) -> Frame:
-        if hasattr(source_faceset, 'faces'):
+        if hasattr(source_faceset, 'faces') and source_faceset.faces:
             source_face = source_faceset.faces[0]
             ref_images = getattr(source_faceset, 'ref_images', [])
         else:
