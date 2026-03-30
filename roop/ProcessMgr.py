@@ -1100,6 +1100,9 @@ class ProcessMgr:
 
     def normalize_swap_frame(self, swap_frame):
         model_type = self._get_swap_type()
+        # Strip batch dimension if present (e.g. [1, C, H, W] -> [C, H, W])
+        while swap_frame.ndim > 3:
+            swap_frame = swap_frame[0]
         swap_frame = swap_frame.transpose(1, 2, 0)
 
         if model_type in ("ghost", "hyperswap", "uniface"):
