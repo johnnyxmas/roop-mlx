@@ -5,6 +5,64 @@ import roop.utilities as util
 
 from typing import List, Any
 
+_nvenc_available = None
+
+
+def is_nvenc_codec(codec: str) -> bool:
+    return codec is not None and "nvenc" in codec
+
+
+def detect_nvenc() -> bool:
+    """Probe whether NVENC encoding is available on this system."""
+    global _nvenc_available
+    if _nvenc_available is not None:
+        return _nvenc_available
+    try:
+        subprocess.check_output(
+            [
+                "ffmpeg", "-hide_banner", "-y", "-loglevel", "error",
+                "-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.1",
+                "-c:v", "h264_nvenc",
+                "-f", "null", "-",
+            ],
+            stderr=subprocess.STDOUT,
+        )
+        _nvenc_available = True
+        print("NVENC hardware encoding is available")
+    except Exception:
+        _nvenc_available = False
+        print("NVENC hardware encoding is NOT available, will use software encoding")
+    return _nvenc_available
+
+
+def get_quality_args(codec: str, quality: int) -> List[str]:
+    """Return the correct quality arguments for the given codec."""
+    if is_nvenc_codec(codec):
+        return ["-cq", str(quality), "-preset", "p4"]
+    return ["-crf", str(quality)]
+
+
+def get_software_fallback(codec: str) -> str:
+    """Return the CPU software fallback for an NVENC codec."""
+    if codec == "h264_nvenc":
+        return "libx264"
+    if codec == "hevc_nvenc":
+        return "libx265"
+    return codec
+
+
+def resolve_codec(codec: str) -> str:
+    """Resolve 'auto' codec or validate NVENC availability, falling back to software."""
+    if codec == "auto":
+        if detect_nvenc():
+            return "h264_nvenc"
+        return "libx264"
+    if is_nvenc_codec(codec) and not detect_nvenc():
+        fallback = get_software_fallback(codec)
+        print(f"NVENC not available, falling back from {codec} to {fallback}")
+        return fallback
+    return codec
+
 
 def run_ffmpeg(args: List[str]) -> bool:
     commands = [
@@ -39,14 +97,18 @@ def cut_video(
     num_frames = end_frame - start_frame
 
     if reencode:
-        run_ffmpeg(
+        codec = resolve_codec(roop.globals.video_encoder)
+        args = [
+            "-ss",
+            format(start_time, ".2f"),
+            "-i",
+            original_video,
+            "-c:v",
+            codec,
+        ]
+        args.extend(get_quality_args(codec, roop.globals.video_quality))
+        args.extend(
             [
-                "-ss",
-                format(start_time, ".2f"),
-                "-i",
-                original_video,
-                "-c:v",
-                roop.globals.video_encoder,
                 "-c:a",
                 "aac",
                 "-frames:v",
@@ -54,6 +116,7 @@ def cut_video(
                 cut_video,
             ]
         )
+        run_ffmpeg(args)
     else:
         run_ffmpeg(
             [
@@ -162,18 +225,20 @@ def create_video(
 ) -> None:
     if temp_directory_path is None:
         temp_directory_path = util.get_temp_directory_path(target_path)
-    run_ffmpeg(
+    codec = resolve_codec(roop.globals.video_encoder)
+    args = [
+        "-r",
+        str(fps),
+        "-i",
+        os.path.join(
+            temp_directory_path, f"%06d.{roop.globals.CFG.output_image_format}"
+        ),
+        "-c:v",
+        codec,
+    ]
+    args.extend(get_quality_args(codec, roop.globals.video_quality))
+    args.extend(
         [
-            "-r",
-            str(fps),
-            "-i",
-            os.path.join(
-                temp_directory_path, f"%06d.{roop.globals.CFG.output_image_format}"
-            ),
-            "-c:v",
-            roop.globals.video_encoder,
-            "-crf",
-            str(roop.globals.video_quality),
             "-pix_fmt",
             "yuv420p",
             "-vf",
@@ -182,6 +247,18 @@ def create_video(
             dest_filename,
         ]
     )
+    if not run_ffmpeg(args) and is_nvenc_codec(codec):
+        fallback = get_software_fallback(codec)
+        print(f"NVENC encoding failed, retrying with {fallback}")
+        args[args.index(codec)] = fallback
+        # Replace NVENC quality args with software quality args
+        if "-cq" in args:
+            cq_idx = args.index("-cq")
+            quality_val = args[cq_idx + 1]
+            # Remove -cq, value, -preset, preset_value
+            del args[cq_idx:cq_idx + 4]
+            args[cq_idx:cq_idx] = ["-crf", quality_val]
+        run_ffmpeg(args)
     return dest_filename
 
 

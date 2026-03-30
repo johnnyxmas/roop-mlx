@@ -17,7 +17,7 @@ available_themes = [
 ]
 image_formats = ["jpg", "png", "webp"]
 video_formats = ["avi", "mkv", "mp4", "webm"]
-video_codecs = ["libx264", "libx265", "libvpx-vp9", "h264_nvenc", "hevc_nvenc"]
+video_codecs = ["auto", "libx264", "libx265", "libvpx-vp9", "h264_nvenc", "hevc_nvenc"]
 providerlist = None
 
 settings_controls = []

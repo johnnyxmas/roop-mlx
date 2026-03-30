@@ -15,6 +15,8 @@ Copyright (c) 2023 Janvarev Vladislav
 import os
 import subprocess as sp
 
+from roop.util_ffmpeg import is_nvenc_codec, resolve_codec, get_software_fallback
+
 PIPE = -1
 STDOUT = -2
 DEVNULL = -3
@@ -88,7 +90,7 @@ class FFMPEG_VideoWriter:
             logfile = sp.PIPE
 
         self.filename = filename
-        self.codec = codec
+        self.codec = resolve_codec(codec)
         self.ext = self.filename.split(".")[-1]
         w = size[0] - 1 if size[0] % 2 != 0 else size[0]
         h = size[1] - 1 if size[1] % 2 != 0 else size[1]
@@ -108,7 +110,6 @@ class FFMPEG_VideoWriter:
             "rawvideo",
             "-s",
             "%dx%d" % (size[0], size[1]),
-            #'-pix_fmt', 'rgba' if withmask else 'rgb24',
             "-pix_fmt",
             "bgr24",
             "-r",
@@ -121,15 +122,12 @@ class FFMPEG_VideoWriter:
         if audiofile is not None:
             cmd.extend(["-i", audiofile, "-acodec", "copy"])
 
-        cmd.extend(
-            [
-                "-vcodec",
-                codec,
-                "-crf",
-                str(crf),
-                #'-preset', preset,
-            ]
-        )
+        cmd.extend(["-vcodec", self.codec])
+        # Use -cq + preset for NVENC, -crf for software encoders
+        if is_nvenc_codec(self.codec):
+            cmd.extend(["-cq", str(crf), "-preset", "p4"])
+        else:
+            cmd.extend(["-crf", str(crf)])
         if ffmpeg_params is not None:
             cmd.extend(ffmpeg_params)
         if bitrate is not None:
@@ -169,7 +167,21 @@ class FFMPEG_VideoWriter:
         try:
             self.proc = sp.Popen(cmd, **popen_params)
         except Exception as e:
-            raise IOError(f"Failed to start FFMPEG process: {e}")
+            if is_nvenc_codec(self.codec):
+                fallback = get_software_fallback(self.codec)
+                print(f"NVENC encoder failed to start, falling back to {fallback}")
+                self.codec = fallback
+                # Replace codec and quality args in cmd
+                vcodec_idx = cmd.index("-vcodec", cmd.index("-i"))
+                cmd[vcodec_idx + 1] = fallback
+                if "-cq" in cmd:
+                    cq_idx = cmd.index("-cq")
+                    cq_val = cmd[cq_idx + 1]
+                    del cmd[cq_idx:cq_idx + 4]  # -cq val -preset p4
+                    cmd[cq_idx:cq_idx] = ["-crf", cq_val]
+                self.proc = sp.Popen(cmd, **popen_params)
+            else:
+                raise IOError(f"Failed to start FFMPEG process: {e}")
 
     def write_frame(self, img_array):
         """Writes one frame in the file."""

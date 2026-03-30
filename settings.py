@@ -28,7 +28,7 @@ class Settings:
         self.output_image_format = self.default_get(data, "output_image_format", "png")
         self.output_video_format = self.default_get(data, "output_video_format", "mp4")
         self.output_video_codec = self.default_get(
-            data, "output_video_codec", "libx264"
+            data, "output_video_codec", "auto"
         )
         self.video_quality = self.default_get(data, "video_quality", 14)
         self.clear_output = self.default_get(data, "clear_output", True)
