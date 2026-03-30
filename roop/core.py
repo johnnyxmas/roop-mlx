@@ -179,125 +179,52 @@ def pre_check() -> bool:
     util.conditional_download(
         download_directory_path,
         [
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/inswapper_128.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/InSwapper/inswapper_128.onnx",
-            ],
-            [
-                "https://huggingface.co/facefusion/models-3.0.0/resolve/main/inswapper_128_fp16.onnx",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/reswapper_128.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/ReSwapper/reswapper_128.onnx",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/reswapper_256.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/ReSwapper/reswapper_256.onnx",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/GFPGANv1.4.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/GFPGAN/GFPGANv1.4.onnx",
-            ],
-            [
-                "https://github.com/csxmli2016/DMDNet/releases/download/v1/DMDNet.pth",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/DMDNet/DMDNet.pth",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/GPEN-BFR-512.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/GPEN/GPEN-BFR-512.onnx",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/GPEN-BFR-1024.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/GPEN/GPEN-BFR-1024.onnx",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/GPEN-BFR-2048.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/GPEN/GPEN-BFR-2048.onnx",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/restoreformer_plus_plus.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/RestoreFormer/restoreformer_plus_plus.onnx",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/xseg.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/xseg.onnx",
-            ],
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/inswapper_128.onnx",
+            "https://huggingface.co/facefusion/models-3.0.0/resolve/main/inswapper_128_fp16.onnx",
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/reswapper_128.onnx",
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/reswapper_256.onnx",
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/GFPGANv1.4.onnx",
+            "https://github.com/csxmli2016/DMDNet/releases/download/v1/DMDNet.pth",
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/GPEN-BFR-512.onnx",
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/restoreformer_plus_plus.onnx",
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/xseg.onnx",
         ],
     )
     download_directory_path = util.resolve_relative_path("../models/CLIP")
     util.conditional_download(
         download_directory_path,
         [
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/rd64-uni-refined.pth",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/rd64-uni-refined.pth",
-            ]
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/rd64-uni-refined.pth",
         ],
     )
     download_directory_path = util.resolve_relative_path("../models/buffalo_l")
     util.conditional_download(
         download_directory_path,
         [
-            [
-                "https://huggingface.co/halllooo/buffalo_l/resolve/main/1k3d68.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/buffalo_l/1k3d68.onnx",
-            ],
-            [
-                "https://huggingface.co/halllooo/buffalo_l/resolve/main/2d106det.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/buffalo_l/2d106det.onnx",
-            ],
-            [
-                "https://huggingface.co/halllooo/buffalo_l/resolve/main/det_10g.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/buffalo_l/det_10g.onnx",
-            ],
-            [
-                "https://huggingface.co/halllooo/buffalo_l/resolve/main/genderage.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/buffalo_l/genderage.onnx",
-            ],
-            [
-                "https://huggingface.co/halllooo/buffalo_l/resolve/main/w600k_r50.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/buffalo_l/w600k_r50.onnx",
-            ],
+            "https://huggingface.co/halllooo/buffalo_l/resolve/main/1k3d68.onnx",
+            "https://huggingface.co/halllooo/buffalo_l/resolve/main/2d106det.onnx",
+            "https://huggingface.co/halllooo/buffalo_l/resolve/main/det_10g.onnx",
+            "https://huggingface.co/halllooo/buffalo_l/resolve/main/genderage.onnx",
+            "https://huggingface.co/halllooo/buffalo_l/resolve/main/w600k_r50.onnx",
         ],
     )
     download_directory_path = util.resolve_relative_path("../models/CodeFormer")
     util.conditional_download(
         download_directory_path,
         [
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/CodeFormerv0.1.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/CodeFormer/CodeFormerv0.1.onnx",
-            ]
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/CodeFormerv0.1.onnx",
         ],
     )
     download_directory_path = util.resolve_relative_path("../models/Frame")
     util.conditional_download(
         download_directory_path,
         [
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/deoldify_artistic.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/DeOldify/deoldify_artistic.onnx",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/deoldify_stable.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/DeOldify/deoldify_stable.onnx",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/isnet-general-use.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/isnet-general-use.onnx",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/real_esrgan_x4.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/real_esrgan_x4.onnx",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/real_esrgan_x2.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/real_esrgan_x2.onnx",
-            ],
-            [
-                "https://huggingface.co/countfloyd/deepfake/resolve/main/lsdir_x4.onnx",
-                "https://codeberg.org/roop-unleashed/models/media/branch/main/lsdir_x4.onnx",
-            ],
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/deoldify_artistic.onnx",
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/deoldify_stable.onnx",
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/isnet-general-use.onnx",
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/real_esrgan_x4.onnx",
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/real_esrgan_x2.onnx",
+            "https://huggingface.co/countfloyd/deepfake/resolve/main/lsdir_x4.onnx",
         ],
     )
 

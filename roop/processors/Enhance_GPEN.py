@@ -1,3 +1,4 @@
+import os
 from typing import Any, List, Callable
 import cv2
 import numpy as np
@@ -5,7 +6,7 @@ import onnxruntime
 import roop.globals
 
 from roop.typing import Face, Frame, FaceSet
-from roop.utilities import resolve_relative_path
+from roop.utilities import resolve_relative_path, conditional_download
 
 
 class Enhance_GPEN:
@@ -18,6 +19,12 @@ class Enhance_GPEN:
     processorname = "gpen"
     type = "enhance"
 
+    GPEN_DOWNLOAD_URLS = {
+        512: "https://huggingface.co/countfloyd/deepfake/resolve/main/GPEN-BFR-512.onnx",
+        1024: "https://huggingface.co/facefusion/models-3.0.0/resolve/main/gpen_bfr_1024.onnx",
+        2048: "https://huggingface.co/facefusion/models-3.0.0/resolve/main/gpen_bfr_2048.onnx",
+    }
+
     def Initialize(self, plugin_options: dict):
         if self.plugin_options is not None:
             if (self.plugin_options["devicename"] != plugin_options["devicename"]
@@ -28,6 +35,14 @@ class Enhance_GPEN:
         if self.model_gpen is None:
             self.input_resolution = self.plugin_options.get("resolution", 512)
             model_path = resolve_relative_path(f"../models/GPEN-BFR-{self.input_resolution}.onnx")
+            if not os.path.exists(model_path):
+                url = self.GPEN_DOWNLOAD_URLS.get(self.input_resolution)
+                if url:
+                    models_dir = resolve_relative_path("../models")
+                    conditional_download(models_dir, [url])
+                    downloaded = os.path.join(models_dir, os.path.basename(url))
+                    if downloaded != model_path and os.path.exists(downloaded):
+                        os.rename(downloaded, model_path)
             self.model_gpen = onnxruntime.InferenceSession(
                 model_path, None, providers=roop.globals.execution_providers
             )

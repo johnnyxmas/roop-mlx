@@ -232,7 +232,10 @@ def conditional_download(
                 )
                 if os.path.exists(download_file_path):
                     break
-                request = urllib.request.urlopen(_url)  # type: ignore[attr-defined]
+                try:
+                    request = urllib.request.urlopen(_url)  # type: ignore[attr-defined]
+                except urllib.error.HTTPError:
+                    continue
                 if not request.status == 200:
                     continue
                 total = int(request.headers.get("Content-Length", 0))
