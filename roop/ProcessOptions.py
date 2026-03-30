@@ -1,5 +1,5 @@
 SWAP_MODEL_OUTPUT_SIZES = {
-    "InSwapper 128": 128,
+    "InSwapper 128 (CPU)": 128,
     "InSwapper 128 FP16": 128,
     "ReSwapper 128": 128,
     "ReSwapper 256": 256,

@@ -32,7 +32,7 @@ is_processing = False
 
 list_files_process: list[ProcessEntry] = []
 model_swap_choices = [
-    "InSwapper 128",
+    "InSwapper 128 (CPU)",
     "InSwapper 128 FP16",
     "ReSwapper 128",
     "ReSwapper 256",

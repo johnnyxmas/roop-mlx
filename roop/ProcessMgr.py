@@ -203,7 +203,7 @@ class ProcessMgr:
                 self.options.frame_processing = True
 
     INSIGHTFACE_MODEL_FILES = {
-        "InSwapper 128": "inswapper_128.onnx",
+        "InSwapper 128 (CPU)": "inswapper_128.onnx",
         "InSwapper 128 FP16": "inswapper_128_fp16.onnx",
         "ReSwapper 128": "reswapper_128.onnx",
         "ReSwapper 256": "reswapper_256.onnx",
