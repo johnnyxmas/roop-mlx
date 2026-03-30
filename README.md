@@ -61,7 +61,7 @@ Run the appropriate script for your GPU from the repo root. Each script creates 
 setup_cuda13.bat
 ```
 
-**NVIDIA RTX (CUDA 12 driver):**
+**NVIDIA RTX (CUDA 12.8 driver):**
 
 ```bat
 setup_cuda12.bat
@@ -93,8 +93,8 @@ source venv/bin/activate
 
 | GPU | Command |
 | --- | --- |
-| NVIDIA / CUDA 13 (RTX 20-series and newer, recommended) | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130` |
-| NVIDIA / CUDA 12 | `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124` |
+| NVIDIA / CUDA 13 (RTX 20-series and newer, recommended) | `pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu130` |
+| NVIDIA / CUDA 12.8 | `pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128` |
 | AMD (Windows) | `pip install torch torchvision torchaudio` then use `onnxruntime-directml` below |
 | macOS / CPU | `pip install torch torchvision torchaudio` |
 
@@ -110,7 +110,7 @@ uv pip install numpy==1.26.4 opencv-python-headless onnx insightface albucore ps
 | Platform | Command |
 | --- | --- |
 | CUDA 13 | `pip install onnxruntime onnxruntime-gpu --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-13/pypi/simple/` |
-| CUDA 12 | `pip install onnxruntime onnxruntime-gpu` |
+| CUDA 12.8 | `pip install onnxruntime onnxruntime-gpu` |
 | AMD (Windows) | `pip install onnxruntime onnxruntime-directml` |
 | macOS Apple Silicon | `pip install onnxruntime onnxruntime-silicon` |
 | CPU only | `pip install onnxruntime` |
@@ -129,7 +129,7 @@ pip install gradio==5.13.0
 ```bash
 python -m venv venv && source venv/bin/activate
 pip install uv
-uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 uv pip install numpy==1.26.4 opencv-python-headless onnx insightface albucore psutil tqdm ftfy regex pyvirtualcam onnxruntime onnxruntime-gpu
 pip install --force-reinstall pydantic==2.10.6
 pip install gradio==5.13.0
