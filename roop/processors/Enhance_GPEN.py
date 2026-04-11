@@ -4,6 +4,7 @@ import numpy as np
 import onnxruntime
 import roop.globals
 
+from roop.perf_profile import augment_providers, get_session_options
 from roop.typing import Face, Frame, FaceSet
 from roop.utilities import resolve_relative_path, conditional_download
 
@@ -43,7 +44,9 @@ class Enhance_GPEN:
                     if downloaded != model_path and os.path.exists(downloaded):
                         os.rename(downloaded, model_path)
             self.model_gpen = onnxruntime.InferenceSession(
-                model_path, None, providers=roop.globals.execution_providers
+                model_path,
+                get_session_options(),
+                providers=augment_providers(roop.globals.execution_providers),
             )
             self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")
             self.device_id = int(self.plugin_options.get("device_id", 0))

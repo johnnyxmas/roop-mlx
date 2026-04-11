@@ -206,7 +206,7 @@ def faceswap_tab():
                 with gr.Row(variant="panel"):
                     ui.globals.ui_selected_swap_model = gr.Dropdown(
                         model_swap_choices,
-                        value=model_swap_choices[0],
+                        value="HyperSwap 1A",
                         label="Specify Face Swap Model",
                     )
                     bt_test_all = gr.Button("Test All Swappers", variant="secondary")
@@ -1391,8 +1391,8 @@ def on_fps_changed(fps):
 def on_destfiles_changed(destfiles):
     global selected_preview_index, current_video_fps
 
+    list_files_process.clear()
     if destfiles is None or len(destfiles) < 1:
-        list_files_process.clear()
         return gr.Slider(value=1, maximum=1, info="0:00:00"), ""
 
     for f in destfiles:

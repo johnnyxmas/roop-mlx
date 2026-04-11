@@ -13,6 +13,10 @@ from roop.face_util import (
     rotate_clockwise,
     clamp_cut_values,
 )
+from roop.perf_profile import (
+    detector_stride as _perf_detector_stride,
+    scene_cut_threshold as _perf_scene_cut_threshold,
+)
 from roop.utilities import (
     compute_cosine_distance,
     get_device,
@@ -107,6 +111,9 @@ class ProcessMgr:
             self.progress_gradio = progress
         self._thread_local = thread_local()
         self.processors_by_gpu = []
+        self._tracker_last_faces = None
+        self._tracker_frames_since_detect = 0
+        self._tracker_prev_small = None
 
     def reuseOldProcessor(self, name: str):
         for p in self.processors:
@@ -120,6 +127,9 @@ class ProcessMgr:
         self.target_face_datas = target_faces
         self.num_frames_no_face = 0
         self.last_swapped_frame = None
+        self._tracker_last_faces = None
+        self._tracker_frames_since_detect = 0
+        self._tracker_prev_small = None
         self.options = options
         devicename = get_device()
 
@@ -657,6 +667,48 @@ class ProcessMgr:
         del copyframe
         return frame
 
+    def _detect_faces_with_tracker(self, frame):
+        """Tracker-assisted face detection.
+
+        On stride=1 (memory_saver) this always runs full detection. On
+        stride>1 (balanced/max_speed) it reuses the previous frame's face
+        list for intermediate frames and forces redetection when either the
+        stride counter expires or a cheap scene-cut check trips.
+        """
+        stride = _perf_detector_stride()
+        if stride <= 1:
+            self._tracker_last_faces = None
+            self._tracker_prev_small = None
+            return get_all_faces(frame)
+
+        force_redetect = False
+        try:
+            small = cv2.resize(frame, (64, 64), interpolation=cv2.INTER_AREA)
+            if self._tracker_prev_small is not None:
+                diff = cv2.absdiff(small, self._tracker_prev_small)
+                if float(diff.mean()) > _perf_scene_cut_threshold():
+                    force_redetect = True
+            self._tracker_prev_small = small
+        except Exception:
+            force_redetect = True
+
+        need_detect = (
+            force_redetect
+            or self._tracker_last_faces is None
+            or not self._tracker_last_faces
+            or self._tracker_frames_since_detect >= stride
+        )
+        if need_detect:
+            faces = get_all_faces(frame)
+            self._tracker_last_faces = faces
+            self._tracker_frames_since_detect = 0
+            return faces
+
+        self._tracker_frames_since_detect += 1
+        # Return a shallow copy so callers that clear() the list don't wipe
+        # our cached reference.
+        return list(self._tracker_last_faces)
+
     def swap_faces(self, frame, temp_frame):
         num_faces_found = 0
 
@@ -673,7 +725,7 @@ class ProcessMgr:
             del face
 
         else:
-            faces = get_all_faces(frame)
+            faces = self._detect_faces_with_tracker(frame)
             if faces is None:
                 return num_faces_found, frame
 

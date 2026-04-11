@@ -3,6 +3,7 @@ import numpy as np
 import onnxruntime
 import roop.globals
 
+from roop.perf_profile import augment_providers, get_session_options
 from roop.typing import Face, Frame, FaceSet
 from roop.utilities import resolve_relative_path
 
@@ -26,15 +27,10 @@ class Enhance_GFPGAN:
         if self.model_gfpgan is None:
             model_path = resolve_relative_path("../models/GFPGANv1.4.onnx")
             
-            # Optimized session options for better performance
-            sess_options = onnxruntime.SessionOptions()
-            sess_options.enable_cpu_mem_arena = False
-            sess_options.enable_mem_pattern = False
-            sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
-            sess_options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
-            
+            sess_options = get_session_options()
+            providers = augment_providers(roop.globals.execution_providers)
             self.model_gfpgan = onnxruntime.InferenceSession(
-                model_path, sess_options, providers=roop.globals.execution_providers
+                model_path, sess_options, providers=providers
             )
             # replace Mac mps with cpu for the moment
             self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")

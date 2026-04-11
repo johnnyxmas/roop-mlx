@@ -3,6 +3,7 @@ import cv2
 import onnxruntime
 import roop.globals
 
+from roop.perf_profile import augment_providers, get_session_options
 from roop.typing import Frame
 from roop.utilities import resolve_relative_path
 
@@ -25,7 +26,9 @@ class Mask_XSeg:
             model_path = resolve_relative_path("../models/xseg.onnx")
             onnxruntime.set_default_logger_severity(3)
             self.model_xseg = onnxruntime.InferenceSession(
-                model_path, None, providers=roop.globals.execution_providers
+                model_path,
+                get_session_options(),
+                providers=augment_providers(roop.globals.execution_providers),
             )
             self.model_inputs = self.model_xseg.get_inputs()
             self.model_outputs = self.model_xseg.get_outputs()

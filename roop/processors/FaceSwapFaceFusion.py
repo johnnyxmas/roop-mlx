@@ -8,6 +8,7 @@ from skimage import transform as trans
 import roop.globals
 
 from roop.FaceSet import FaceSet
+from roop.perf_profile import augment_providers, get_session_options
 from roop.typing import Face, Frame
 from roop.utilities import resolve_relative_path, conditional_download
 
@@ -84,11 +85,10 @@ class FaceSwapFaceFusion:
             if not os.path.exists(model_path):
                 conditional_download(models_dir, [[config["url"]]])
 
-            sess_options = onnxruntime.SessionOptions()
-            sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
-            sess_options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+            sess_options = get_session_options()
+            providers = augment_providers(roop.globals.execution_providers)
             self.model_swap = onnxruntime.InferenceSession(
-                model_path, sess_options, providers=roop.globals.execution_providers
+                model_path, sess_options, providers=providers
             )
 
             if config["crossface"] is not None:
@@ -96,7 +96,7 @@ class FaceSwapFaceFusion:
                 if not os.path.exists(crossface_path):
                     conditional_download(models_dir, [[config["crossface_url"]]])
                 self.model_crossface = onnxruntime.InferenceSession(
-                    crossface_path, None, providers=roop.globals.execution_providers
+                    crossface_path, get_session_options(), providers=providers
                 )
 
     def _convert_embedding(self, normed_embedding: np.ndarray) -> np.ndarray:

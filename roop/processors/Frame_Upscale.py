@@ -2,6 +2,7 @@ import numpy as np
 import onnxruntime
 import roop.globals
 
+from roop.perf_profile import augment_providers, get_session_options
 from roop.utilities import resolve_relative_path, conditional_thread_semaphore
 from roop.typing import Frame
 
@@ -46,7 +47,9 @@ class Frame_Upscale:
                 self.scale = 4
             onnxruntime.set_default_logger_severity(3)
             self.model_upscale = onnxruntime.InferenceSession(
-                model_path, None, providers=roop.globals.execution_providers
+                model_path,
+                get_session_options(),
+                providers=augment_providers(roop.globals.execution_providers),
             )
             self.model_inputs = self.model_upscale.get_inputs()
             model_outputs = self.model_upscale.get_outputs()

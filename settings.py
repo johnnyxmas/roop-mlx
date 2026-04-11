@@ -44,6 +44,10 @@ class Settings:
         self.launch_browser = self.default_get(data, "launch_browser", True)
         self.cuda_device_id = self.default_get(data, "cuda_device_id", 0)
         self.multi_gpu = self.default_get(data, "multi_gpu", False)
+        self.performance_profile = self.default_get(
+            data, "performance_profile", "memory_saver"
+        )
+        self.detector_stride = self.default_get(data, "detector_stride", 3)
 
     def save(self):
         data = {
@@ -65,6 +69,8 @@ class Settings:
             "output_show_video": self.output_show_video,
             "cuda_device_id": self.cuda_device_id,
             "multi_gpu": self.multi_gpu,
+            "performance_profile": self.performance_profile,
+            "detector_stride": self.detector_stride,
         }
         with open(self.config_file, "w") as f:
             yaml.dump(data, f)

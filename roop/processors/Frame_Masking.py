@@ -3,6 +3,7 @@ import numpy as np
 import onnxruntime
 import roop.globals
 
+from roop.perf_profile import augment_providers, get_session_options
 from roop.utilities import resolve_relative_path
 from roop.typing import Frame
 
@@ -29,7 +30,9 @@ class Frame_Masking:
             self.device_id = int(self.plugin_options.get("device_id", 0))
             model_path = resolve_relative_path("../models/Frame/isnet-general-use.onnx")
             self.model_masking = onnxruntime.InferenceSession(
-                model_path, None, providers=roop.globals.execution_providers
+                model_path,
+                get_session_options(),
+                providers=augment_providers(roop.globals.execution_providers),
             )
             self.model_inputs = self.model_masking.get_inputs()
             model_outputs = self.model_masking.get_outputs()
