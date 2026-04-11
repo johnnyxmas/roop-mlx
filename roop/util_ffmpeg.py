@@ -21,7 +21,7 @@ def detect_nvenc() -> bool:
         subprocess.check_output(
             [
                 "ffmpeg", "-hide_banner", "-y", "-loglevel", "error",
-                "-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.1",
+                "-f", "lavfi", "-i", "nullsrc=s=256x256:d=0.1",
                 "-c:v", "h264_nvenc",
                 "-f", "null", "-",
             ],
