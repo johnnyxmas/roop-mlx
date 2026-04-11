@@ -1,6 +1,7 @@
 import os
 import shutil
 import pathlib
+import cv2
 import gradio as gr
 import roop.utilities as util
 import roop.globals
@@ -211,6 +212,8 @@ def faceswap_tab():
                         value=model_swap_choices[0],
                         label="Specify Face Swap Model",
                     )
+                    bt_test_all = gr.Button("Test All Swappers", variant="secondary")
+                with gr.Row(variant="panel"):
                     forced_fps = gr.Slider(
                         minimum=0,
                         maximum=120,
@@ -592,6 +595,25 @@ def faceswap_tab():
             target_faces,
             selected_face_detection,
         ],
+    )
+    bt_test_all.click(
+        fn=test_all_swappers,
+        inputs=[
+            preview_frame_num,
+            bt_destfiles,
+            selected_face_detection,
+            ui.globals.ui_upscale,
+            selected_mask_engine,
+            clip_text,
+            no_face_action,
+            vr_mode,
+            autorotate,
+            max_face_distance,
+            ui.globals.ui_blend_ratio,
+            num_swap_steps,
+        ],
+        outputs=[resultfiles],
+        show_progress="full",
     )
     set_frame_start.click(
         fn=on_set_frame,
@@ -1097,6 +1119,82 @@ def on_preview_mask(swap_model, frame_num, files, clip_text, mask_engine):
 
     current_frame = live_swap(current_frame, options)
     return util.convert_to_gradio(current_frame)
+
+
+def test_all_swappers(
+    frame_num,
+    files,
+    detection,
+    upsample,
+    selected_mask_engine,
+    clip_text,
+    no_face_action,
+    vr_mode,
+    auto_rotate,
+    face_distance,
+    blend_ratio,
+    num_steps,
+):
+    from roop.core import live_swap, get_processing_plugins
+
+    global selected_preview_index, SELECTED_INPUT_FACE_INDEX
+
+    if files is None or len(files) < 1 or frame_num is None:
+        return None
+
+    filename = files[selected_preview_index].name
+    if util.is_video(filename) or filename.lower().endswith("gif"):
+        current_frame = get_video_frame(filename, frame_num)
+    else:
+        current_frame = get_image_frame(filename)
+
+    if current_frame is None:
+        return None
+
+    output_dir = roop.globals.output_path
+
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+
+    roop.globals.selected_enhancer = "None"
+    roop.globals.distance_threshold = face_distance
+    roop.globals.blend_ratio = blend_ratio
+    roop.globals.no_face_action = index_of_no_face_action(no_face_action)
+    roop.globals.face_swap_mode = translate_swap_mode(detection)
+    roop.globals.vr_mode = vr_mode
+    roop.globals.autorotate_faces = auto_rotate
+    roop.globals.subsample_size = int(upsample[:3])
+
+    frame_source = current_frame.copy()
+    output_files = []
+    for swap_model in model_swap_choices:
+        options = ProcessOptions(
+            swap_model,
+            get_processing_plugins(None, swap_model),
+            roop.globals.distance_threshold,
+            roop.globals.blend_ratio,
+            roop.globals.face_swap_mode,
+            SELECTED_INPUT_FACE_INDEX,
+            clip_text,
+            None,
+            num_steps,
+            roop.globals.subsample_size,
+            False,
+            False,
+        )
+        swapped_frame = live_swap(frame_source.copy(), options)
+        if swapped_frame is None:
+            continue
+        safe_model = "".join(ch if ch.isalnum() else "_" for ch in swap_model).strip("_")
+        target_basename = os.path.splitext(os.path.basename(filename))[0]
+        output_filename = os.path.join(
+            output_dir,
+            f"{safe_model}-{target_basename}.{roop.globals.CFG.output_image_format}",
+        )
+        cv2.imwrite(output_filename, swapped_frame)
+        output_files.append(output_filename)
+
+    return output_files
 
 
 def on_clear_input_faces():
