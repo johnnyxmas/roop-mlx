@@ -1,6 +1,5 @@
 import os
 import gradio as gr
-import shutil
 import roop.utilities as util
 import roop.util_ffmpeg as ffmpeg
 import roop.globals

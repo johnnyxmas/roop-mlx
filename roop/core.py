@@ -25,11 +25,10 @@ import roop.utilities as util
 import roop.util_ffmpeg as ffmpeg
 import ui.main as main
 from settings import Settings
-from roop.face_util import extract_face_images
 from roop.ProcessEntry import ProcessEntry
 from roop.ProcessMgr import ProcessMgr
 from roop.ProcessOptions import ProcessOptions
-from roop.capturer import get_video_frame_total, release_video
+from roop.capturer import get_video_frame_total
 
 
 clip_text = None
@@ -240,12 +239,9 @@ def set_display_ui(function):
 
 
 def update_status(message: str) -> None:
-    global call_display_ui
-
     print(message)
     if call_display_ui is not None:
         call_display_ui(message)
-
 
 
 def get_processing_plugins(masking_engine, swap_model=None):
@@ -305,7 +301,7 @@ def batch_process_regular(
     progress,
     selected_index=0,
 ) -> None:
-    global clip_text, process_mgr
+    global process_mgr
 
     # Only limit resources, don't release them before processing
     limit_resources()
@@ -336,7 +332,7 @@ def batch_process_regular(
 
 
 def batch_process_with_options(files: list[ProcessEntry], options, progress):
-    global clip_text, process_mgr
+    global process_mgr
 
     # Only limit resources, don't release them before processing
     limit_resources()
@@ -352,8 +348,6 @@ def batch_process_with_options(files: list[ProcessEntry], options, progress):
 
 
 def batch_process(output_method, files: list[ProcessEntry], use_new_method) -> None:
-    global clip_text, process_mgr
-
     roop.globals.processing = True
 
     # limit threads for some providers
@@ -547,14 +541,13 @@ def cleanup_temp_folders_only():
     """Clean up only temporary folders without releasing face analyzer (for stopped jobs)"""
     import tempfile
     import shutil
-    import time
     from roop import utilities as util
-    
+
     try:
         # Clean up temp folder used for frame extraction
         if roop.globals.target_path:
             util.clean_temp(roop.globals.target_path)
-        
+
         # Clean up batch processing temp folder
         tempfolder = os.path.join(tempfile.gettempdir(), "rooptmp")
         if os.path.exists(tempfolder):
@@ -597,13 +590,13 @@ def cleanup_temp_folders_only():
                     except PermissionError:
                         # File is in use, skip it to avoid corrupting active UI files
                         pass
-                    except Exception as e:
+                    except Exception:
                         # Other errors, skip silently
                         pass
-                        
+
                 if cleaned_count > 0:
                     update_status(f"Cleaned {cleaned_count}/{total_count} temp files (preserved UI files)")
-                
+
     except Exception as e:
         print(f"Warning: Error during temp cleanup: {e}")
 
@@ -629,7 +622,6 @@ def cleanup_cache_folders():
         if not roop.globals.CFG.use_os_temp_folder:
             app_temp_dir = os.path.abspath(os.path.join(os.getcwd(), "temp"))
             if os.path.exists(app_temp_dir):
-                import time
                 cleaned_count = 0
                 total_count = 0
                 
@@ -659,13 +651,13 @@ def cleanup_cache_folders():
                     except PermissionError:
                         # File is in use, skip it to avoid corrupting active UI files
                         pass
-                    except Exception as e:
+                    except Exception:
                         # Other errors, skip silently
                         pass
-                        
+
                 if cleaned_count > 0:
                     update_status(f"Cleaned {cleaned_count}/{total_count} temp files (preserved UI files)")
-        
+
         # Clean up CLIP cache if it exists
         clip_cache_dir = os.path.expanduser("~/.cache/clip")
         if os.path.exists(clip_cache_dir):

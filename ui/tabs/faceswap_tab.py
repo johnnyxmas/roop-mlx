@@ -1,6 +1,7 @@
 import os
-import shutil
 import pathlib
+import time
+import threading
 import cv2
 import gradio as gr
 import roop.utilities as util
@@ -65,7 +66,7 @@ manual_masking = False
 
 
 def faceswap_tab():
-    global no_face_choices, previewimage
+    global previewimage
 
     with gr.Tab("🎭 Face Swap"):
         with gr.Row(variant="panel"):
@@ -382,6 +383,11 @@ def faceswap_tab():
                     interactive=True,
                 )
         with gr.Row(variant="panel"):
+            status_bar = gr.HTML(
+                value='<div style="padding:8px 12px;background:#1a1a2e;border:1px solid #333;border-radius:6px;font-family:monospace;color:#888;font-size:14px;">Idle</div>',
+                label="Processing Status",
+            )
+        with gr.Row(variant="panel"):
             with gr.Column():
                 resultfiles = gr.Files(label="Processed File(s)", interactive=False)
             with gr.Column():
@@ -548,7 +554,7 @@ def faceswap_tab():
             ui.globals.ui_upscale,
             maskimage,
         ],
-        outputs=[bt_start, bt_stop, resultfiles],
+        outputs=[bt_start, bt_stop, resultfiles, status_bar],
         show_progress="full",
     )
     after_swap_event = start_event.success(
@@ -560,7 +566,7 @@ def faceswap_tab():
     bt_stop.click(
         fn=stop_swap,
         cancels=[start_event, after_swap_event],
-        outputs=[bt_start, bt_stop],
+        outputs=[bt_start, bt_stop, status_bar],
         queue=False,
     )
 
@@ -648,8 +654,6 @@ def on_mask_blur_changed(mask_offset):
 
 
 def set_mask_offset(index, mask_offset):
-    global SELECTED_INPUT_FACE_INDEX
-
     if len(roop.globals.INPUT_FACESETS) > SELECTED_INPUT_FACE_INDEX:
         offs = (
             roop.globals.INPUT_FACESETS[SELECTED_INPUT_FACE_INDEX].faces[0].mask_offsets
@@ -680,7 +684,7 @@ def on_add_local_folder(folder):
 
 
 def on_srcfile_changed(srcfiles, progress=gr.Progress()):
-    global SELECTION_FACES_DATA, IS_INPUT, input_faces, face_selection, last_image
+    global SELECTION_FACES_DATA, IS_INPUT
 
     IS_INPUT = True
 
@@ -749,21 +753,15 @@ def on_select_input_face(evt: gr.SelectData):
 
 
 def remove_selected_input_face():
-    global SELECTED_INPUT_FACE_INDEX
-
     if len(roop.globals.INPUT_FACESETS) > SELECTED_INPUT_FACE_INDEX:
-        f = roop.globals.INPUT_FACESETS.pop(SELECTED_INPUT_FACE_INDEX)
-        del f
+        roop.globals.INPUT_FACESETS.pop(SELECTED_INPUT_FACE_INDEX)
     if len(ui.globals.ui_input_thumbs) > SELECTED_INPUT_FACE_INDEX:
-        f = ui.globals.ui_input_thumbs.pop(SELECTED_INPUT_FACE_INDEX)
-        del f
+        ui.globals.ui_input_thumbs.pop(SELECTED_INPUT_FACE_INDEX)
 
     return ui.globals.ui_input_thumbs
 
 
 def move_selected_input(button_text):
-    global SELECTED_INPUT_FACE_INDEX
-
     if button_text == "⬅ Move left":
         if SELECTED_INPUT_FACE_INDEX <= 0:
             return ui.globals.ui_input_thumbs
@@ -781,8 +779,6 @@ def move_selected_input(button_text):
 
 
 def move_selected_target(button_text):
-    global SELECTED_TARGET_FACE_INDEX
-
     if button_text == "⬅ Move left":
         if SELECTED_TARGET_FACE_INDEX <= 0:
             return ui.globals.ui_target_thumbs
@@ -807,11 +803,9 @@ def on_select_target_face(evt: gr.SelectData):
 
 def remove_selected_target_face():
     if len(ui.globals.ui_target_thumbs) > SELECTED_TARGET_FACE_INDEX:
-        f = roop.globals.TARGET_FACES.pop(SELECTED_TARGET_FACE_INDEX)
-        del f
+        roop.globals.TARGET_FACES.pop(SELECTED_TARGET_FACE_INDEX)
     if len(ui.globals.ui_target_thumbs) > SELECTED_TARGET_FACE_INDEX:
-        f = ui.globals.ui_target_thumbs.pop(SELECTED_TARGET_FACE_INDEX)
-        del f
+        ui.globals.ui_target_thumbs.pop(SELECTED_TARGET_FACE_INDEX)
     return ui.globals.ui_target_thumbs
 
 
@@ -876,8 +870,6 @@ def on_select_face(evt: gr.SelectData):  # SelectData is a subclass of EventData
 
 
 def on_selected_face():
-    global IS_INPUT, SELECTED_FACE_INDEX, SELECTION_FACES_DATA
-
     fd = SELECTION_FACES_DATA[SELECTED_FACE_INDEX]
     image = util.convert_to_gradio(fd[1])
     if IS_INPUT:
@@ -928,7 +920,7 @@ def on_preview_frame_changed(
     num_steps,
     upsample,
 ):
-    global SELECTED_INPUT_FACE_INDEX, manual_masking, current_video_fps
+    global manual_masking, current_video_fps
 
     from roop.core import live_swap, get_processing_plugins
 
@@ -967,10 +959,6 @@ def on_preview_frame_changed(
     if current_frame is None:
         return None, None, gr.Slider(info=timeinfo)
 
-    layers = None
-    if maskimage is not None:
-        layers = maskimage["layers"]
-
     if not fake_preview or len(roop.globals.INPUT_FACESETS) < 1:
         return (
             gr.Image(value=util.convert_to_gradio(current_frame), visible=True),
@@ -990,7 +978,6 @@ def on_preview_frame_changed(
     mask_engine = map_mask_engine(selected_mask_engine, clip_text)
 
     roop.globals.execution_threads = roop.globals.CFG.max_threads
-    mask = layers[0] if layers is not None else None
     face_index = SELECTED_INPUT_FACE_INDEX
     if len(roop.globals.INPUT_FACESETS) <= face_index:
         face_index = 0
@@ -1052,8 +1039,6 @@ def gen_processing_text(start, end):
 
 
 def on_set_frame(sender: str, frame_num):
-    global selected_preview_index, list_files_process
-
     idx = selected_preview_index
     if list_files_process[idx].endframe == 0:
         return gen_processing_text(0, 0)
@@ -1072,8 +1057,6 @@ def on_set_frame(sender: str, frame_num):
 
 def on_preview_mask(swap_model, frame_num, files, clip_text, mask_engine):
     from roop.core import live_swap, get_processing_plugins
-
-    global is_processing
 
     if (
         is_processing
@@ -1132,8 +1115,6 @@ def test_all_swappers(
     num_steps,
 ):
     from roop.core import live_swap, get_processing_plugins
-
-    global selected_preview_index, SELECTED_INPUT_FACE_INDEX
 
     if files is None or len(files) < 1 or frame_num is None:
         return None
@@ -1206,8 +1187,6 @@ def on_clear_destfiles():
 
 
 def index_of_no_face_action(dropdown_text):
-    global no_face_choices
-
     return no_face_choices.index(dropdown_text)
 
 
@@ -1226,6 +1205,30 @@ def translate_swap_mode(dropdown_text):
         return "all_male"
 
     return "all"
+
+
+def _format_status_html(status):
+    if not status.get("active"):
+        return '<div style="padding:8px 12px;background:#1a1a2e;border:1px solid #333;border-radius:6px;font-family:monospace;color:#888;font-size:14px;">Idle</div>'
+    percent = status.get("percent", 0)
+    fps = status.get("fps", 0)
+    eta = int(status.get("eta_seconds", 0))
+    cur = status.get("current_frame", 0)
+    total = status.get("total_frames", 0)
+    h, rem = divmod(eta, 3600)
+    m, s = divmod(rem, 60)
+    eta_str = f"{h:d}h {m:02d}m {s:02d}s" if h else f"{m:d}m {s:02d}s"
+    bar_w = max(0, min(100, percent))
+    return (
+        '<div style="padding:8px 12px;background:#1a1a2e;border:1px solid #333;border-radius:6px;font-family:monospace;color:#e0e0e0;font-size:14px;">'
+        '<div style="display:flex;justify-content:space-between;margin-bottom:6px;">'
+        f'<span><b>{percent:5.1f}%</b> &nbsp; ({cur}/{total} frames)</span>'
+        f'<span>FPS: <b>{fps:5.1f}</b> &nbsp; | &nbsp; ETA: <b>{eta_str}</b></span>'
+        '</div>'
+        '<div style="height:8px;background:#222;border-radius:4px;overflow:hidden;">'
+        f'<div style="width:{bar_w}%;height:100%;background:linear-gradient(90deg,#4a9eff,#7b5cff);"></div>'
+        '</div></div>'
+    )
 
 
 def start_swap(
@@ -1253,10 +1256,13 @@ def start_swap(
     from ui.main import prepare_environment
     from roop.core import batch_process_regular
 
-    global is_processing, list_files_process
+    global is_processing
+
+    idle_html = _format_status_html({"active": False})
 
     if list_files_process is None or len(list_files_process) <= 0:
-        return gr.Button(variant="primary"), None, None
+        yield gr.Button(variant="primary"), None, None, idle_html
+        return
 
     if roop.globals.CFG.clear_output:
         clean_dir(roop.globals.output_path)
@@ -1284,13 +1290,20 @@ def start_swap(
     if roop.globals.face_swap_mode == "selected":
         if len(roop.globals.TARGET_FACES) < 1:
             gr.Error("No Target Face selected!")
-            return gr.Button(variant="primary"), None, None
+            yield gr.Button(variant="primary"), None, None, idle_html
+            return
 
     is_processing = True
+    roop.globals.progress_status.update({
+        "percent": 0, "fps": 0.0, "eta_seconds": 0,
+        "current_frame": 0, "total_frames": 0,
+        "start_time": time.time(), "active": True,
+    })
     yield (
         gr.Button(variant="secondary", interactive=False),
         gr.Button(variant="primary", interactive=True),
         None,
+        _format_status_html(roop.globals.progress_status),
     )
     roop.globals.execution_threads = roop.globals.CFG.max_threads
     roop.globals.video_encoder = roop.globals.CFG.output_video_codec
@@ -1299,20 +1312,44 @@ def start_swap(
         roop.globals.CFG.memory_limit if roop.globals.CFG.memory_limit > 0 else None
     )
 
-    batch_process_regular(
-        swap_model,
-        output_method,
-        list_files_process,
-        mask_engine,
-        clip_text,
-        processing_method == "In-Memory processing",
-        imagemask,
-        restore_original_mouth,
-        num_swap_steps,
-        progress,
-        SELECTED_INPUT_FACE_INDEX,
-    )
+    worker_exc = []
+
+    def _worker():
+        try:
+            batch_process_regular(
+                swap_model,
+                output_method,
+                list_files_process,
+                mask_engine,
+                clip_text,
+                processing_method == "In-Memory processing",
+                imagemask,
+                restore_original_mouth,
+                num_swap_steps,
+                progress,
+                SELECTED_INPUT_FACE_INDEX,
+            )
+        except Exception as e:
+            worker_exc.append(e)
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+    while t.is_alive():
+        t.join(timeout=0.5)
+        yield (
+            gr.Button(variant="secondary", interactive=False),
+            gr.Button(variant="primary", interactive=True),
+            None,
+            _format_status_html(roop.globals.progress_status),
+        )
+
     is_processing = False
+    roop.globals.progress_status["active"] = False
+
+    if worker_exc:
+        raise worker_exc[0]
+
     outdir = pathlib.Path(roop.globals.output_path)
     outfiles = [str(item) for item in outdir.rglob("*") if item.is_file()]
     if len(outfiles) > 0:
@@ -1320,28 +1357,29 @@ def start_swap(
             gr.Button(variant="primary", interactive=True),
             gr.Button(variant="secondary", interactive=False),
             gr.Files(value=outfiles),
+            idle_html,
         )
     else:
         yield (
             gr.Button(variant="primary", interactive=True),
             gr.Button(variant="secondary", interactive=False),
             None,
+            idle_html,
         )
 
 
 def stop_swap():
     roop.globals.processing = False
+    roop.globals.progress_status["active"] = False
     gr.Info("Aborting processing - please wait for the remaining threads to be stopped")
     return (
         gr.Button(variant="primary", interactive=True),
         gr.Button(variant="secondary", interactive=False),
-        None,
+        _format_status_html({"active": False}),
     )
 
 
 def on_fps_changed(fps):
-    global selected_preview_index, list_files_process
-
     if (
         len(list_files_process) < 1
         or list_files_process[selected_preview_index].endframe < 1
@@ -1351,7 +1389,7 @@ def on_fps_changed(fps):
 
 
 def on_destfiles_changed(destfiles):
-    global selected_preview_index, list_files_process, current_video_fps
+    global selected_preview_index, current_video_fps
 
     if destfiles is None or len(destfiles) < 1:
         list_files_process.clear()
@@ -1385,7 +1423,7 @@ def on_destfiles_changed(destfiles):
 
 
 def on_destfiles_selected(evt: gr.SelectData):
-    global selected_preview_index, list_files_process, current_video_fps
+    global selected_preview_index, current_video_fps
 
     if evt is not None:
         selected_preview_index = evt.index

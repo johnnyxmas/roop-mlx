@@ -36,6 +36,16 @@ no_face_action = 0
 
 processing = False
 
+progress_status = {
+    "percent": 0,
+    "fps": 0.0,
+    "eta_seconds": 0,
+    "current_frame": 0,
+    "total_frames": 0,
+    "start_time": 0,
+    "active": False,
+}
+
 g_current_face_analysis = None
 g_desired_face_analysis = None
 

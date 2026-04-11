@@ -20,7 +20,7 @@ from typing import Union, Any
 from contextlib import nullcontext
 
 from pathlib import Path
-from typing import List, Any
+from typing import List
 from tqdm import tqdm
 from scipy.spatial import distance
 from urllib.parse import urlparse
@@ -371,9 +371,8 @@ def open_folder(path: str):
             subprocess.call("cmd.exe /C start".split() + [path])
         else:  # linux variants
             subprocess.Popen(["xdg-open", path])
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
-        pass
         # import webbrowser
         # webbrowser.open(url)
 

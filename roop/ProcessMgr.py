@@ -1,4 +1,5 @@
 import os
+import time
 import cv2
 import numpy as np
 import psutil
@@ -581,6 +582,24 @@ class ProcessMgr:
             }
         )
         progress.update(1)
+
+        # Update global progress status for UI status bar
+        current_frame = progress.n
+        elapsed = time.time() - roop.globals.progress_status["start_time"]
+        fps = current_frame / elapsed if elapsed > 0 else 0
+        remaining_frames = self.total_frames - current_frame
+        eta_seconds = remaining_frames / fps if fps > 0 else 0
+        percent = (current_frame / self.total_frames * 100) if self.total_frames > 0 else 0
+
+        roop.globals.progress_status.update({
+            "percent": percent,
+            "fps": fps,
+            "eta_seconds": eta_seconds,
+            "current_frame": current_frame,
+            "total_frames": self.total_frames,
+            "active": True,
+        })
+
         if self.progress_gradio is not None:
             self.progress_gradio(
                 (progress.n, self.total_frames),

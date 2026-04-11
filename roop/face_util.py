@@ -228,7 +228,6 @@ arcface_dst = np.array(
 )
 
 
-
 def estimate_norm(lmk, image_size=112):
     if image_size % 112 == 0:
         ratio = float(image_size) / 112.0

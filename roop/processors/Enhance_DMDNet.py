@@ -1,4 +1,3 @@
-from typing import Any, List, Callable
 import cv2
 import numpy as np
 import torch
@@ -6,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.utils.spectral_norm as SpectralNorm
 import threading
-from torchvision.ops import roi_align
 
 from math import sqrt
 
@@ -821,7 +819,6 @@ class FeatureExtractor(nn.Module):
     def forward(self, img, locs):
         le_location = locs[:, 0, :].int().cpu().numpy()
         re_location = locs[:, 1, :].int().cpu().numpy()
-        no_location = locs[:, 2, :].int().cpu().numpy()
         mo_location = locs[:, 3, :].int().cpu().numpy()
 
         f1_0 = self.conv1(img)
@@ -1040,10 +1037,6 @@ class DMDNet(nn.Module):
             "MO64Key": MO64_key,
             "MO64Value": MO64_value,
         }
-
-        FS256 = {"LE256F": fs["le256"], "RE256F": fs["re256"], "MO256F": fs["mo256"]}
-        FS128 = {"LE128F": fs["le128"], "RE128F": fs["re128"], "MO128F": fs["mo128"]}
-        FS64 = {"LE64F": fs["le64"], "RE64F": fs["re64"], "MO64F": fs["mo64"]}
 
         return Mem256, Mem128, Mem64
 

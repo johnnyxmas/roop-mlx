@@ -1,9 +1,6 @@
-import shutil
-import os
 import gradio as gr
 import roop.globals
 import ui.globals
-from roop.utilities import clean_dir
 
 available_themes = [
     "Default",

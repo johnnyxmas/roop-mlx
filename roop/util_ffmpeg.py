@@ -3,7 +3,7 @@ import subprocess
 import roop.globals
 import roop.utilities as util
 
-from typing import List, Any
+from typing import List
 
 _nvenc_available = None
 
@@ -79,7 +79,7 @@ def run_ffmpeg(args: List[str]) -> bool:
     try:
         subprocess.check_output(commands, stderr=subprocess.STDOUT)
         return True
-    except Exception as e:
+    except Exception:
         print("Running ffmpeg failed! Commandline:")
         print(" ".join(commands))
     return False
@@ -291,7 +291,6 @@ def create_gif_from_video(video_path: str, gif_path):
 
 
 def create_video_from_gif(gif_path: str, output_path):
-    fps = util.detect_fps(gif_path)
     filter = """scale='trunc(in_w/2)*2':'trunc(in_h/2)*2',format=yuv420p,fps=10"""
     run_ffmpeg(
         [

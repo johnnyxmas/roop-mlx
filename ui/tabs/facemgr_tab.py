@@ -7,7 +7,7 @@ import roop.globals
 from roop.face_util import extract_face_images
 from roop.capturer import get_video_frame, get_video_frame_total
 from typing import List, Tuple, Optional
-from roop.typing import Frame, Face, FaceSet
+from roop.typing import Frame
 
 selected_face_index = -1
 thumbs = []
@@ -97,8 +97,6 @@ def facemgr_tab() -> None:
 
 
 def on_faceset_changed(faceset, progress=gr.Progress()) -> List[Frame]:
-    global thumbs, images
-
     if faceset is None:
         return thumbs
 
@@ -133,7 +131,7 @@ def on_faceset_changed(faceset, progress=gr.Progress()) -> List[Frame]:
 def on_fb_files_changed(
     inputfiles, progress=gr.Progress()
 ) -> Tuple[List[Frame], Optional[gr.Image], Optional[gr.Slider], Optional[gr.Button]]:
-    global thumbs, images, total_frames, current_video_fps
+    global total_frames, current_video_fps
 
     if inputfiles is None or len(inputfiles) < 1:
         return thumbs, None, None, None
@@ -208,8 +206,6 @@ def on_frame_num_fst_changed(inputfiles: List[gr.Files], frame_num: int) -> Fram
 
 
 def on_cutfromframe_clicked(inputfiles: List[gr.Files], frame_num: int) -> List[Frame]:
-    global thumbs
-
     filename = inputfiles[0].name
     SELECTION_FACES_DATA = extract_face_images(filename, (True, frame_num), 0.5)
     for f in SELECTION_FACES_DATA:
@@ -220,19 +216,13 @@ def on_cutfromframe_clicked(inputfiles: List[gr.Files], frame_num: int) -> List[
 
 
 def on_remove_clicked() -> List[Frame]:
-    global thumbs, images, selected_face_index
-
     if len(thumbs) > selected_face_index:
-        f = thumbs.pop(selected_face_index)
-        del f
-        f = images.pop(selected_face_index)
-        del f
+        thumbs.pop(selected_face_index)
+        images.pop(selected_face_index)
     return thumbs
 
 
 def on_clear_clicked() -> Tuple[List[Frame], None, None]:
-    global thumbs, images
-
     thumbs.clear()
     images.clear()
     return thumbs, None, None
@@ -240,7 +230,7 @@ def on_clear_clicked() -> Tuple[List[Frame], None, None]:
 
 def on_update_clicked() -> Optional[str]:
     if len(images) < 1:
-        gr.Warning(f"No faces to create faceset from!")
+        gr.Warning("No faces to create faceset from!")
         return None
 
     imgnames = []

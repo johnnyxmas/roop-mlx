@@ -55,7 +55,7 @@ def virtualcamera(
         print(f"Using virtual camera: {cam.device}")
         print(f"Using {cam.native_fmt}")
     else:
-        print(f"Not streaming to virtual camera!")
+        print("Not streaming to virtual camera!")
     subsample_size = roop.globals.subsample_size
 
     options = ProcessOptions(
@@ -93,7 +93,7 @@ def virtualcamera(
 def start_virtual_cam(
     swap_model, streamobs, use_xseg, use_mouthrestore, cam_number, resolution
 ):
-    global cam_thread, cam_active
+    global cam_thread
 
     if not cam_active:
         width, height = map(int, resolution.split("x"))
@@ -113,7 +113,7 @@ def start_virtual_cam(
 
 
 def stop_virtual_cam():
-    global cam_active, cam_thread
+    global cam_active
 
     if cam_active:
         cam_active = False

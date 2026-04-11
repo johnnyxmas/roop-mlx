@@ -3,7 +3,6 @@ import os
 import sys
 import urllib.request
 import urllib.error
-from pathlib import Path
 from tqdm import tqdm
 from urllib.parse import urlparse
 

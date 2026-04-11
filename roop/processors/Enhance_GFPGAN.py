@@ -1,4 +1,3 @@
-from typing import Any, List, Callable
 import cv2
 import numpy as np
 import onnxruntime
