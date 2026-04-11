@@ -35,30 +35,6 @@ class FaceSwapFaceFusion:
     type = "swap"
 
     FACE_SWAPPER_MODELS = {
-        "Ghost 1": {
-            "file": "ghost_1_256.onnx",
-            "url": "https://huggingface.co/facefusion/models-3.0.0/resolve/main/ghost_1_256.onnx",
-            "crossface": "crossface_ghost.onnx",
-            "crossface_url": "https://huggingface.co/facefusion/models-3.4.0/resolve/main/crossface_ghost.onnx",
-            "swap_type": "ghost",
-            "size": 256,
-        },
-        "Ghost 2": {
-            "file": "ghost_2_256.onnx",
-            "url": "https://huggingface.co/facefusion/models-3.0.0/resolve/main/ghost_2_256.onnx",
-            "crossface": "crossface_ghost.onnx",
-            "crossface_url": "https://huggingface.co/facefusion/models-3.4.0/resolve/main/crossface_ghost.onnx",
-            "swap_type": "ghost",
-            "size": 256,
-        },
-        "Ghost 3": {
-            "file": "ghost_3_256.onnx",
-            "url": "https://huggingface.co/facefusion/models-3.0.0/resolve/main/ghost_3_256.onnx",
-            "crossface": "crossface_ghost.onnx",
-            "crossface_url": "https://huggingface.co/facefusion/models-3.4.0/resolve/main/crossface_ghost.onnx",
-            "swap_type": "ghost",
-            "size": 256,
-        },
         "HyperSwap 1A": {
             "file": "hyperswap_1a_256.onnx",
             "url": "https://huggingface.co/facefusion/models-3.3.0/resolve/main/hyperswap_1a_256.onnx",
@@ -81,14 +57,6 @@ class FaceSwapFaceFusion:
             "crossface": None,
             "crossface_url": None,
             "swap_type": "hyperswap",
-            "size": 256,
-        },
-        "UniFace": {
-            "file": "uniface_256.onnx",
-            "url": "https://huggingface.co/facefusion/models-3.0.0/resolve/main/uniface_256.onnx",
-            "crossface": None,
-            "crossface_url": None,
-            "swap_type": "uniface",
             "size": 256,
         },
     }

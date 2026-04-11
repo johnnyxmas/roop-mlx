@@ -40,10 +40,6 @@ model_swap_choices = [
     "HyperSwap 1A",
     "HyperSwap 1B",
     "HyperSwap 1C",
-    "Ghost 1",
-    "Ghost 2",
-    "Ghost 3",
-    "UniFace",
 ]
 
 no_face_choices = [

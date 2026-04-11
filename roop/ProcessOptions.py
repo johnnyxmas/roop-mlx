@@ -3,16 +3,12 @@ SWAP_MODEL_OUTPUT_SIZES = {
     "InSwapper 128 FP16": 128,
     "ReSwapper 128": 128,
     "ReSwapper 256": 256,
-    "Ghost 1": 256,
-    "Ghost 2": 256,
-    "Ghost 3": 256,
     "HyperSwap 1A": 256,
     "HyperSwap 1B": 256,
     "HyperSwap 1C": 256,
-    "UniFace": 256,
 }
 
-FF_SWAP_MODELS = {"Ghost 1", "Ghost 2", "Ghost 3", "HyperSwap 1A", "HyperSwap 1B", "HyperSwap 1C", "UniFace"}
+FF_SWAP_MODELS = {"HyperSwap 1A", "HyperSwap 1B", "HyperSwap 1C"}
 
 
 class ProcessOptions:
