@@ -203,6 +203,7 @@ def faceswap_tab():
                         elem_id="filelist",
                         height=233,
                     )
+                target_file_info = gr.HTML(value="", visible=True, elem_id="target_file_info")
                 with gr.Row(variant="panel"):
                     ui.globals.ui_selected_swap_model = gr.Dropdown(
                         model_swap_choices,
@@ -478,7 +479,7 @@ def faceswap_tab():
     bt_destfiles.change(
         fn=on_destfiles_changed,
         inputs=[bt_destfiles],
-        outputs=[preview_frame_num, text_frame_clip],
+        outputs=[preview_frame_num, text_frame_clip, target_file_info],
         show_progress="hidden",
     ).success(
         fn=on_preview_frame_changed,
@@ -488,7 +489,7 @@ def faceswap_tab():
     )
     bt_destfiles.select(
         fn=on_destfiles_selected,
-        outputs=[preview_frame_num, text_frame_clip, forced_fps],
+        outputs=[preview_frame_num, text_frame_clip, forced_fps, target_file_info],
         show_progress="hidden",
     ).success(
         fn=on_preview_frame_changed,
@@ -497,7 +498,7 @@ def faceswap_tab():
         show_progress="hidden",
     )
     bt_destfiles.clear(
-        fn=on_clear_destfiles, outputs=[target_faces, selected_face_detection]
+        fn=on_clear_destfiles, outputs=[target_faces, selected_face_detection, target_file_info]
     )
     resultfiles.select(
         fn=on_resultfiles_selected,
@@ -1183,7 +1184,7 @@ def on_clear_input_faces():
 def on_clear_destfiles():
     roop.globals.TARGET_FACES.clear()
     ui.globals.ui_target_thumbs.clear()
-    return ui.globals.ui_target_thumbs, gr.Dropdown(value="First found")
+    return ui.globals.ui_target_thumbs, gr.Dropdown(value="First found"), ""
 
 
 def index_of_no_face_action(dropdown_text):
@@ -1388,12 +1389,71 @@ def on_fps_changed(fps):
     list_files_process[selected_preview_index].fps = fps
 
 
+def get_target_file_info_html(filename):
+    if filename is None or not os.path.isfile(filename):
+        return ""
+    try:
+        filesize = os.path.getsize(filename)
+        if filesize > 1_000_000_000:
+            size_str = f"{filesize / 1_000_000_000:.1f} GB"
+        elif filesize > 1_000_000:
+            size_str = f"{filesize / 1_000_000:.1f} MB"
+        else:
+            size_str = f"{filesize / 1_000:.1f} KB"
+
+        if util.is_video(filename) or filename.lower().endswith("gif"):
+            cap = cv2.VideoCapture(filename)
+            if cap.isOpened():
+                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                codec_int = int(cap.get(cv2.CAP_PROP_FOURCC))
+                codec = "".join([chr((codec_int >> 8 * i) & 0xFF) for i in range(4)])
+                cap.release()
+                if fps > 0 and total > 0:
+                    duration_s = total / fps
+                    mins, secs = divmod(int(duration_s), 60)
+                    hrs, mins = divmod(mins, 60)
+                    dur_str = f"{hrs}:{mins:02d}:{secs:02d}"
+                else:
+                    dur_str = "unknown"
+                return (
+                    f"<div style='padding:6px 10px;margin-top:2px;background:#1a1a2e;border:1px solid #333;border-radius:6px;"
+                    f"font-size:13px;color:#ccc;line-height:1.6'>"
+                    f"<b style='color:#7aa2f7'>Video</b> &nbsp; "
+                    f"<b>{w}×{h}</b> &nbsp; "
+                    f"<b>{fps:.2f}</b> fps &nbsp; "
+                    f"{total} frames &nbsp; "
+                    f"{dur_str} &nbsp; "
+                    f"codec: {codec} &nbsp; "
+                    f"{size_str}"
+                    f"</div>"
+                )
+            cap.release()
+        else:
+            img = cv2.imread(filename)
+            if img is not None:
+                h, w = img.shape[:2]
+                return (
+                    f"<div style='padding:6px 10px;margin-top:2px;background:#1a1a2e;border:1px solid #333;border-radius:6px;"
+                    f"font-size:13px;color:#ccc;line-height:1.6'>"
+                    f"<b style='color:#7aa2f7'>Image</b> &nbsp; "
+                    f"<b>{w}×{h}</b> &nbsp; "
+                    f"{size_str}"
+                    f"</div>"
+                )
+    except Exception:
+        pass
+    return ""
+
+
 def on_destfiles_changed(destfiles):
     global selected_preview_index, current_video_fps
 
     list_files_process.clear()
     if destfiles is None or len(destfiles) < 1:
-        return gr.Slider(value=1, maximum=1, info="0:00:00"), ""
+        return gr.Slider(value=1, maximum=1, info="0:00:00"), "", ""
 
     for f in destfiles:
         list_files_process.append(ProcessEntry(f.name, 0, 0, 0))
@@ -1413,13 +1473,14 @@ def on_destfiles_changed(destfiles):
     else:
         total_frames = 1
     list_files_process[idx].endframe = total_frames
+    info_html = get_target_file_info_html(filename)
     if total_frames > 1:
         return gr.Slider(
             value=1, maximum=total_frames, info="0:00:00"
         ), gen_processing_text(
             list_files_process[idx].startframe, list_files_process[idx].endframe
-        )
-    return gr.Slider(value=1, maximum=total_frames, info="0:00:00"), ""
+        ), info_html
+    return gr.Slider(value=1, maximum=total_frames, info="0:00:00"), "", info_html
 
 
 def on_destfiles_selected(evt: gr.SelectData):
@@ -1438,6 +1499,7 @@ def on_destfiles_selected(evt: gr.SelectData):
     else:
         total_frames = 1
 
+    info_html = get_target_file_info_html(filename)
     if total_frames > 1:
         return (
             gr.Slider(
@@ -1449,11 +1511,13 @@ def on_destfiles_selected(evt: gr.SelectData):
                 list_files_process[idx].startframe, list_files_process[idx].endframe
             ),
             fps,
+            info_html,
         )
     return (
         gr.Slider(value=1, maximum=total_frames, info="0:00:00"),
         gen_processing_text(0, 0),
         fps,
+        info_html,
     )
 
 

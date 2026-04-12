@@ -531,22 +531,36 @@ class ProcessMgr:
         self.frames_queue.clear()
         self.processed_queue.clear()
 
+    _last_progress_time: float = 0.0
+    _last_gc_time: float = 0.0
+    _pending_frames: int = 0
+    _psutil_process = None
+    _PROGRESS_INTERVAL: float = 5.0   # seconds between full progress updates
+    _GC_COOLDOWN: float = 60.0        # seconds between gc.collect() calls
+
     def update_progress(self, progress: Any = None) -> None:
+        self._pending_frames += 1
+
+        now = time.time()
+        if (now - self._last_progress_time) < self._PROGRESS_INTERVAL:
+            return
+
+        batch = self._pending_frames
+        self._pending_frames = 0
+        self._last_progress_time = now
+
         import roop.globals
         import gc
-        
-        process = psutil.Process(os.getpid())
-        memory_usage = process.memory_info().rss / 1024 / 1024 / 1024
-        
-        # Use user's max memory setting for warnings and cleanup (this is for system RAM)
+
+        # Memory check
+        if self._psutil_process is None:
+            self._psutil_process = psutil.Process(os.getpid())
+        memory_usage = self._psutil_process.memory_info().rss / 1024 / 1024 / 1024
         max_memory_gb = roop.globals.max_memory if roop.globals.max_memory else 16
-        warning_threshold = max_memory_gb * 0.8  # Warn at 80% of max memory
-        cleanup_threshold = max_memory_gb * 0.9  # Force cleanup at 90% of max memory
-        
-        # Check GPU VRAM usage if CUDA is available
+
+        # GPU info
         gpu_memory_info = ""
         gpu_cleanup_needed = False
-        
         if (
             "CUDAExecutionProvider" in roop.globals.execution_providers
             and hasattr(roop.globals, 'torch') and roop.globals.torch.cuda.is_available()
@@ -555,35 +569,25 @@ class ProcessMgr:
                 gpu_memory_used = roop.globals.torch.cuda.memory_allocated() / 1024**3
                 gpu_memory_total = roop.globals.torch.cuda.get_device_properties(0).total_memory / 1024**3
                 gpu_usage_percent = (gpu_memory_used / gpu_memory_total) * 100
-                
                 gpu_memory_info = f", GPU: {gpu_memory_used:.1f}/{gpu_memory_total:.1f}GB ({gpu_usage_percent:.1f}%)"
-                
-                # GPU cleanup threshold - only at critically high usage to avoid interfering with encoding
-                if gpu_usage_percent > 90:  # Only trigger cleanup at 90% to avoid encoding interference
+                if gpu_usage_percent > 90:
                     gpu_cleanup_needed = True
-                    print(f"WARNING: GPU memory usage ({gpu_usage_percent:.1f}%) is critically high. Forcing GPU cleanup...")
-                    
             except Exception:
                 gpu_memory_info = ", GPU: N/A"
-        
-        # System RAM cleanup
-        if memory_usage > cleanup_threshold:
-            print(f"WARNING: System RAM usage ({memory_usage:.2f}GB) exceeds 90% of limit ({max_memory_gb}GB). Forcing garbage collection...")
+
+        # Throttled GC — at most once every _GC_COOLDOWN seconds
+        need_gc = (memory_usage > max_memory_gb * 0.9 or gpu_cleanup_needed)
+        if need_gc and (now - self._last_gc_time) >= self._GC_COOLDOWN:
+            self._last_gc_time = now
             gc.collect()
-        elif memory_usage > warning_threshold:
-            print(f"INFO: System RAM usage ({memory_usage:.2f}GB) approaching limit ({max_memory_gb}GB)")
-        
-        # GPU VRAM cleanup - avoid synchronization during video processing
-        if gpu_cleanup_needed:
-            try:
-                with roop.globals.torch.cuda.device("cuda"):
-                    roop.globals.torch.cuda.empty_cache()
-                    # Skip synchronization during video processing to avoid encoding interference
-                    # Only do garbage collection for system RAM
-                gc.collect()
-            except Exception as e:
-                print(f"Warning: Could not clean GPU memory: {e}")
-            
+            if gpu_cleanup_needed:
+                try:
+                    with roop.globals.torch.cuda.device("cuda"):
+                        roop.globals.torch.cuda.empty_cache()
+                except Exception:
+                    pass
+            print(f"Memory: {memory_usage:.2f}/{max_memory_gb}GB{gpu_memory_info} — ran cleanup")
+
         progress.set_postfix(
             {
                 "memory_usage": "{:.2f}".format(memory_usage).zfill(5) + "GB" + gpu_memory_info,
@@ -591,11 +595,11 @@ class ProcessMgr:
                 "execution_threads": self.num_threads,
             }
         )
-        progress.update(1)
+        progress.update(batch)
 
-        # Update global progress status for UI status bar
+        # Update global progress status for UI
         current_frame = progress.n
-        elapsed = time.time() - roop.globals.progress_status["start_time"]
+        elapsed = now - roop.globals.progress_status["start_time"]
         fps = current_frame / elapsed if elapsed > 0 else 0
         remaining_frames = self.total_frames - current_frame
         eta_seconds = remaining_frames / fps if fps > 0 else 0
@@ -612,7 +616,7 @@ class ProcessMgr:
 
         if self.progress_gradio is not None:
             self.progress_gradio(
-                (progress.n, self.total_frames),
+                (current_frame, self.total_frames),
                 desc="Processing",
                 total=self.total_frames,
                 unit="frames",
