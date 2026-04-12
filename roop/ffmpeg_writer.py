@@ -14,6 +14,8 @@ Copyright (c) 2023 Janvarev Vladislav
 
 import os
 import subprocess as sp
+import threading
+from collections import deque
 
 from roop.util_ffmpeg import is_nvenc_codec, resolve_codec, get_software_fallback
 
@@ -183,6 +185,28 @@ class FFMPEG_VideoWriter:
             else:
                 raise IOError(f"Failed to start FFMPEG process: {e}")
 
+        # Drain stderr on a background thread. ffmpeg's stderr pipe is ~4KB
+        # on Windows; at 4K/hevc_nvenc it fills after a few hundred frames,
+        # which blocks ffmpeg's writer, stops it from reading stdin, and
+        # deadlocks the whole producer/consumer pipeline. The ring buffer
+        # keeps the last 200 lines for diagnostics.
+        self._stderr_lines: deque = deque(maxlen=200)
+        self._stderr_thread = None
+        if self.proc.stderr is not None:
+            self._stderr_thread = threading.Thread(
+                target=self._drain_stderr, daemon=True
+            )
+            self._stderr_thread.start()
+
+    def _drain_stderr(self):
+        try:
+            for line in iter(self.proc.stderr.readline, b""):
+                if not line:
+                    break
+                self._stderr_lines.append(line)
+        except Exception:
+            pass
+
     def write_frame(self, img_array):
         """Writes one frame in the file."""
         try:
@@ -192,10 +216,11 @@ class FFMPEG_VideoWriter:
             #    self.proc.stdin.write(img_array.tostring())
         except (IOError, OSError, BrokenPipeError) as err:
             try:
-                _, ffmpeg_error = self.proc.communicate(timeout=5)
-            except:
-                ffmpeg_error = b"Process communication failed"
-                
+                self.proc.wait(timeout=5)
+            except Exception:
+                pass
+            ffmpeg_error = b"".join(self._stderr_lines) or b"Process communication failed"
+
             error = str(err) + (
                 "\n\nroop unleashed error: FFMPEG encountered "
                 "the following error while writing file %s:"
@@ -262,11 +287,17 @@ class FFMPEG_VideoWriter:
         if self.proc:
             try:
                 self.proc.stdin.close()
-                if self.proc.stderr is not None:
-                    self.proc.stderr.close()
-                
+
                 # Wait for process to complete with timeout to avoid hanging
                 return_code = self.proc.wait(timeout=30)
+
+                if self._stderr_thread is not None:
+                    self._stderr_thread.join(timeout=5)
+                if self.proc.stderr is not None:
+                    try:
+                        self.proc.stderr.close()
+                    except Exception:
+                        pass
                 
                 # Check for assertion failures or other FFMPEG errors
                 if return_code != 0:
