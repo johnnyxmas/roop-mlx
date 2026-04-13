@@ -48,7 +48,6 @@ class Settings:
             data, "performance_profile", "memory_saver"
         )
         self.detector_stride = self.default_get(data, "detector_stride", 3)
-        self.face_detector = self.default_get(data, "face_detector", "InsightFace")
         self.use_gpu_decode = self.default_get(data, "use_gpu_decode", True)
 
     def save(self):
@@ -73,7 +72,6 @@ class Settings:
             "multi_gpu": self.multi_gpu,
             "performance_profile": self.performance_profile,
             "detector_stride": self.detector_stride,
-            "face_detector": self.face_detector,
             "use_gpu_decode": self.use_gpu_decode,
         }
         with open(self.config_file, "w") as f:

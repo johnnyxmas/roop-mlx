@@ -57,11 +57,9 @@ def release_face_analyser() -> None:
 
 
 def _use_yolo() -> bool:
-    """Return True if the user selected the YOLO face detector."""
-    cfg = getattr(roop.globals, "CFG", None)
-    if cfg is None:
-        return False
-    return getattr(cfg, "face_detector", "InsightFace") == "YOLOv8n-Face"
+    """Use YOLOv8n-Face on memory_saver profile; InsightFace on everything else."""
+    from roop.perf_profile import use_yolo_detector
+    return use_yolo_detector()
 
 
 def get_first_face(frame: Frame) -> Any:

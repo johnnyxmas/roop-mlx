@@ -112,6 +112,11 @@ def detector_stride() -> int:
     return max(1, int(configured))
 
 
+def use_yolo_detector() -> bool:
+    """Use YOLOv8n-Face on memory_saver; InsightFace on balanced/max_speed."""
+    return current_profile() == MEMORY_SAVER
+
+
 def scene_cut_threshold() -> float:
     """Mean absolute diff (0..255 domain) above which we force redetection."""
     return 8.0

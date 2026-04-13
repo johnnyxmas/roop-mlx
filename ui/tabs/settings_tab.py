@@ -24,7 +24,6 @@ video_codecs = [
 ]
 
 performance_profiles = ["memory_saver", "balanced", "max_speed"]
-face_detectors = ["InsightFace", "YOLOv8n-Face"]
 
 providerlist = None
 settings_controls = []
@@ -123,15 +122,6 @@ def settings_tab():
                     value=True,
                     elem_id="default_det_size",
                     interactive=True,
-                )
-                settings_controls.append(
-                    gr.Dropdown(
-                        face_detectors,
-                        label="Face Detector",
-                        value=roop.globals.CFG.face_detector,
-                        elem_id="face_detector",
-                        interactive=True,
-                    )
                 )
                 settings_controls.append(
                     gr.Checkbox(

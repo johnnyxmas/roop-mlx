@@ -187,10 +187,11 @@ All settings are stored in `config.yaml` and editable from the **⚙ Settings** 
 
 ### Face Detection
 
+The face detector is chosen automatically based on the Performance Profile — no separate setting.
+
 | Setting | Description |
 | --- | --- |
-| **Face Detector** | Detection backend. **InsightFace**: Buffalo_l RetinaFace — accurate, moderate speed (default). **YOLOv8n-Face**: 3–5× faster, slightly less accurate on tiny or occluded faces. Both produce the same face data for the swap pipeline. |
-| **Use default Det-Size** | Use InsightFace's default 640×640 detector input. Uncheck to use a larger 1024×1024 input — slower but finds smaller and more distant faces. |
+| **Use default Det-Size** | Use InsightFace's default 640×640 detector input. Uncheck to use a larger 1024×1024 input — slower but finds smaller and more distant faces. Only applies when InsightFace is active (`balanced` / `max_speed`). |
 
 ### Performance Profile
 
@@ -198,9 +199,9 @@ Selected under **Performance Profile** in Settings.
 
 | Profile | VRAM | Description |
 | --- | --- | --- |
-| `memory_saver` | ≤ 6 GB | Safest. Disables ORT memory arena, pattern, and buffer reuse. Face detection runs every frame. |
-| `balanced` | ≥ 8 GB | Enables ORT allocators and preallocates CUDA input buffers. Typically 20–40% faster with ~200–500 MB extra VRAM. |
-| `max_speed` | ≥ 12 GB | Adds TensorRT (FP16) and a larger detector stride. **First run is slow** — TensorRT builds an engine per model (2–10 min, app may appear frozen). Engines are cached under `models/trt_cache/`; subsequent runs are fast. Cache is invalidated by driver or ORT upgrades. |
+| `memory_saver` | ≤ 6 GB | Safest. Disables ORT memory arena, pattern, and buffer reuse. Uses **YOLOv8n-Face** detector (smaller, faster). Face detection runs every frame. |
+| `balanced` | ≥ 8 GB | Enables ORT allocators and preallocates CUDA input buffers. Uses **InsightFace** detector. Typically 20–40% faster than memory_saver, ~200–500 MB extra VRAM. |
+| `max_speed` | ≥ 12 GB | Adds TensorRT (FP16) and a larger detector stride. Uses **InsightFace** detector. **First run is slow** — TensorRT builds an engine per model (2–10 min, app may appear frozen). Engines are cached under `models/trt_cache/`; subsequent runs are fast. Cache is invalidated by driver or ORT upgrades. |
 
 **Detector Stride** (max_speed only): how often to run full face detection. `1` = every frame (safest). `3–5` = reuse previous boxes for intermediate frames. Optical-flow tracking smooths results at high strides; a scene-cut check forces redetection when the frame changes drastically.
 

@@ -11,7 +11,7 @@
 - Fixed FP16 conversion failures for all face enhancement models (GFPGAN, GPEN, CodeFormer, RestoreFormer++): Conv nodes require matched types that `keep_io_types=True` breaks — enhancement models now run as FP32
 - Added FP16 conversion for buffalo_l face analysis models stored in a separate directory so InsightFace's scanner is unaffected
 - Added centralized model download registry and FP16 conversion pipeline (`model_manager.py`)
-- Added YOLOv8n-Face as an alternative face detector (3–5× faster than InsightFace buffalo_l)
+- Added YOLOv8n-Face as the face detector for `memory_saver` profile; InsightFace buffalo_l is used for `balanced` and `max_speed` (no separate setting)
 - Added optical-flow face tracking between detection frames with automatic scene-cut redetection
 - Added GPU-accelerated video decode (NVDEC) option in Settings
 - Added performance profile selector: `memory_saver`, `balanced`, `max_speed` (TensorRT)
