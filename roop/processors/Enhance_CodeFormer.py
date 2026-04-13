@@ -6,7 +6,6 @@ import roop.globals
 from roop.perf_profile import (
     augment_providers,
     get_enhancer_session_options,
-    should_use_fp16_models,
 )
 from roop.typing import Face, Frame, FaceSet
 from roop.utilities import resolve_relative_path
@@ -33,9 +32,6 @@ class Enhance_CodeFormer:
             model_path = resolve_relative_path(
                 "../models/CodeFormer/CodeFormerv0.1.onnx"
             )
-            if should_use_fp16_models():
-                from roop.model_manager import get_fp16_model_path
-                model_path = get_fp16_model_path(model_path)
             _sess_opts = get_enhancer_session_options()
             self.model_codeformer = onnxruntime.InferenceSession(
                 model_path,

@@ -6,7 +6,6 @@ import roop.globals
 from roop.perf_profile import (
     augment_providers,
     get_enhancer_session_options,
-    should_use_fp16_models,
 )
 from roop.typing import Face, Frame, FaceSet
 from roop.utilities import resolve_relative_path
@@ -30,10 +29,6 @@ class Enhance_GFPGAN:
         self.plugin_options = plugin_options
         if self.model_gfpgan is None:
             model_path = resolve_relative_path("../models/GFPGANv1.4.onnx")
-
-            if should_use_fp16_models():
-                from roop.model_manager import get_fp16_model_path
-                model_path = get_fp16_model_path(model_path)
 
             sess_options = get_enhancer_session_options()
             providers = augment_providers(roop.globals.execution_providers)

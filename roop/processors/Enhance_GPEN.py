@@ -7,7 +7,6 @@ import roop.globals
 from roop.perf_profile import (
     augment_providers,
     get_enhancer_session_options,
-    should_use_fp16_models,
 )
 from roop.typing import Face, Frame, FaceSet
 from roop.utilities import resolve_relative_path, conditional_download
@@ -47,9 +46,6 @@ class Enhance_GPEN:
                     downloaded = os.path.join(models_dir, os.path.basename(url))
                     if downloaded != model_path and os.path.exists(downloaded):
                         os.rename(downloaded, model_path)
-            if should_use_fp16_models():
-                from roop.model_manager import get_fp16_model_path
-                model_path = get_fp16_model_path(model_path)
             _sess_opts = get_enhancer_session_options()
             self.model_gpen = onnxruntime.InferenceSession(
                 model_path,

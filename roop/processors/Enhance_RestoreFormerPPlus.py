@@ -6,7 +6,6 @@ import roop.globals
 from roop.perf_profile import (
     augment_providers,
     get_enhancer_session_options,
-    should_use_fp16_models,
 )
 from roop.typing import Face, Frame, FaceSet
 from roop.utilities import resolve_relative_path
@@ -32,9 +31,6 @@ class Enhance_RestoreFormerPPlus:
             self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")
             self.device_id = int(self.plugin_options.get("device_id", 0))
             model_path = resolve_relative_path("../models/restoreformer_plus_plus.onnx")
-            if should_use_fp16_models():
-                from roop.model_manager import get_fp16_model_path
-                model_path = get_fp16_model_path(model_path)
             _sess_opts = get_enhancer_session_options()
             self.model_restoreformerpplus = onnxruntime.InferenceSession(
                 model_path,

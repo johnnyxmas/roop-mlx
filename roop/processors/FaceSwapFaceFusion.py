@@ -3,8 +3,6 @@ from typing import Optional, Union
 
 import numpy as np
 import onnxruntime
-import cv2
-from skimage import transform as trans
 import roop.globals
 
 from roop.FaceSet import FaceSet
@@ -16,15 +14,6 @@ from roop.typing import Face, Frame
 from roop.utilities import resolve_relative_path, conditional_download
 
 
-# FFHQ 512x512 5-point landmark template (eyes, nose, mouth corners)
-FFHQ_LANDMARKS_512 = np.array([
-    [192.98138, 239.94708],
-    [318.90277, 240.19360],
-    [256.63416, 314.01935],
-    [201.26117, 371.41043],
-    [313.08905, 371.15118],
-], dtype=np.float32)
-
 
 class FaceSwapFaceFusion:
     plugin_options: Optional[dict] = None
@@ -33,7 +22,6 @@ class FaceSwapFaceFusion:
     devicename: Optional[str] = None
     device_id: int = 0
     swap_type: Optional[str] = None
-    preprocessing: str = "ghost"
 
     processorname = "faceswap_ff"
     type = "swap"
@@ -77,7 +65,6 @@ class FaceSwapFaceFusion:
         modelname = plugin_options["modelname"]
         config = self.FACE_SWAPPER_MODELS[modelname]
         self.swap_type = config["swap_type"]
-        self.preprocessing = config["swap_type"]
 
         if self.model_swap is None:
             self.devicename = plugin_options["devicename"].replace("mps", "cpu")
@@ -116,16 +103,6 @@ class FaceSwapFaceFusion:
         self.model_crossface.run_with_iobinding(io_binding)
         return io_binding.copy_outputs_to_cpu()[0]
 
-    def _warp_face_ffhq(self, kps: np.ndarray, source_image: np.ndarray, size: int = 256) -> np.ndarray:
-        scale = size / 512.0
-        dst = FFHQ_LANDMARKS_512 * scale
-        tform = trans.SimilarityTransform.from_estimate(kps, dst)
-        M = tform.params[0:2, :]
-        warped = cv2.warpAffine(source_image, M, (size, size), borderValue=0.0)
-        warped = warped[:, :, ::-1] / 127.5 - 1
-        warped = warped.transpose(2, 0, 1)
-        return np.expand_dims(warped, axis=0).astype(np.float32)
-
     def Run(self, source_faceset: Union[FaceSet, Face], target_face: Face, temp_frame: Frame) -> Frame:
         if hasattr(source_faceset, 'faces') and source_faceset.faces:
             source_face = source_faceset.faces[0]
@@ -136,10 +113,6 @@ class FaceSwapFaceFusion:
 
         if self.swap_type in ("ghost", "hyperswap"):
             source_data = self._convert_embedding(source_face.normed_embedding)
-        elif self.swap_type == "uniface":
-            if not ref_images:
-                return temp_frame
-            source_data = self._warp_face_ffhq(source_face.kps, ref_images[0])
         else:
             return temp_frame
 
