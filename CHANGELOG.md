@@ -1,7 +1,25 @@
 # Changelog
 
-## v4.5 — 2026-03-29
+## v4.5 — 2026-04-12
 
+- Major speed boost for video processing: CUDA OrtValue preallocation with per-thread io_binding eliminates repeated GPU buffer allocation across frames
+- Fixed video processing hang: thread-local FaceTracker instances prevent cross-thread race conditions that caused deadlocks at high thread counts
+- Fixed video processing deadlock: uncaught exceptions in worker threads now always unblock the writer thread
+- Fixed scene-change artifacts: optical flow tracker now falls back to fresh face detection instead of returning stale keypoints from a prior scene
+- Fixed rainbow/halftone artifacts on HyperSwap models: removed incompatible CUDA graph capture from HyperSwap inference session
+- Fixed thread-safety crash in CodeFormer, RestoreFormer++, Frame_Colorizer, Frame_Upscale, and Frame_Masking: all shared `io_binding` objects replaced with per-call local bindings
+- Fixed FP16 conversion failures for all face enhancement models (GFPGAN, GPEN, CodeFormer, RestoreFormer++): Conv nodes require matched types that `keep_io_types=True` breaks — enhancement models now run as FP32
+- Added FP16 conversion for buffalo_l face analysis models stored in a separate directory so InsightFace's scanner is unaffected
+- Added centralized model download registry and FP16 conversion pipeline (`model_manager.py`)
+- Added YOLOv8n-Face as an alternative face detector (3–5× faster than InsightFace buffalo_l)
+- Added optical-flow face tracking between detection frames with automatic scene-cut redetection
+- Added GPU-accelerated video decode (NVDEC) option in Settings
+- Added performance profile selector: `memory_saver`, `balanced`, `max_speed` (TensorRT)
+- Added configurable detector stride and TensorRT engine cache
+- Startup now purges corrupt Gradio temp image files to prevent ImageEditor preprocessing crashes
+- Fixed video frame seek failures (H.264 B-frame libavcodec assertion) with automatic VideoCapture reopen and retry
+- Fixed InsightFace startup time: emap matrix cached as `.npy` sidecar to avoid parsing the full 500 MB ONNX protobuf on every launch
+- Ocean dark theme set as default
 - Multi-GPU support: frame workload distributed across all CUDA GPUs simultaneously
 - GPU device selection dropdown in Settings UI (detected automatically at startup)
 - GPEN now supports 512, 1024, and 2048px variants with matched upscale pipeline
