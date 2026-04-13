@@ -146,9 +146,11 @@ class FaceSwapFaceFusion:
         io_binding = self.model_swap.io_binding()
         io_binding.bind_cpu_input("target", temp_frame)
         io_binding.bind_cpu_input("source", source_data)
-        io_binding.bind_output(
-            self.model_swap.get_outputs()[0].name, self.devicename, self.device_id
-        )
+        # Bind ALL model outputs; some ORT versions require every output to be
+        # bound when using run_with_iobinding.  We only consume the first
+        # output (the swapped face), but the mask output must still be bound.
+        for out in self.model_swap.get_outputs():
+            io_binding.bind_output(out.name, self.devicename, self.device_id)
         self.model_swap.run_with_iobinding(io_binding)
         return io_binding.copy_outputs_to_cpu()[0][0]
 
