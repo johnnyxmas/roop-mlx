@@ -80,68 +80,6 @@ def run():
         }
         .image-container.svelte-1l6wqyv {height: 100%}
 
-        /* ── Tooltip "?" buttons ── */
-        .roop-tip-wrap { margin: -6px 0 8px 2px; padding: 0; overflow: visible !important; }
-        .roop-tip-wrap > div, .roop-tip-wrap > div > div {
-            padding: 0 !important;
-            overflow: visible !important;
-            min-height: 0 !important;
-        }
-        .roop-tip {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: #555;
-            color: #fff;
-            font-size: 12px;
-            font-weight: bold;
-            cursor: help;
-            position: relative;
-            user-select: none;
-            font-family: sans-serif;
-        }
-        .roop-tip .roop-tip-body {
-            visibility: hidden;
-            opacity: 0;
-            position: absolute;
-            left: 26px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 360px;
-            max-width: 80vw;
-            background: #1e1e1e;
-            color: #eee;
-            border: 1px solid #555;
-            border-radius: 6px;
-            padding: 10px 12px;
-            font-weight: normal;
-            font-size: 12px;
-            line-height: 1.5;
-            text-align: left;
-            z-index: 10000;
-            transition: opacity 0.15s;
-            pointer-events: none;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-            white-space: normal;
-        }
-        .roop-tip .roop-tip-body ul { margin: 0; padding-left: 18px; }
-        .roop-tip .roop-tip-body li { margin-bottom: 5px; }
-        .roop-tip .roop-tip-body li:last-child { margin-bottom: 0; }
-        .roop-tip .roop-tip-body code {
-            background: #333;
-            padding: 1px 4px;
-            border-radius: 3px;
-            font-size: 11px;
-        }
-        .roop-tip:hover .roop-tip-body,
-        .roop-tip:focus .roop-tip-body {
-            visibility: visible;
-            opacity: 1;
-        }
-
     """
 
     while run_server:
