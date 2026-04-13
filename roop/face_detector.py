@@ -12,7 +12,7 @@ import numpy as np
 import onnxruntime
 
 import roop.globals
-from roop.perf_profile import augment_providers, get_session_options
+from roop.perf_profile import get_session_options
 from roop.utilities import resolve_relative_path
 
 
@@ -106,7 +106,9 @@ class YOLOFaceDetector:
         if roop.globals.CFG and roop.globals.CFG.force_cpu:
             providers = ["CPUExecutionProvider"]
         else:
-            providers = augment_providers(roop.globals.execution_providers)
+            # Detection models are small and fast on CUDA; TRT compilation
+            # overhead is not worth it here — skip augment_providers().
+            providers = roop.globals.execution_providers
 
         self._session = onnxruntime.InferenceSession(
             model_path, sess_options, providers=providers
@@ -129,7 +131,7 @@ class YOLOFaceDetector:
         providers = (
             ["CPUExecutionProvider"]
             if roop.globals.CFG and roop.globals.CFG.force_cpu
-            else augment_providers(roop.globals.execution_providers)
+            else roop.globals.execution_providers
         )
         self._recognition_session = onnxruntime.InferenceSession(
             model_path, sess_options, providers=providers
@@ -150,7 +152,7 @@ class YOLOFaceDetector:
         providers = (
             ["CPUExecutionProvider"]
             if roop.globals.CFG and roop.globals.CFG.force_cpu
-            else augment_providers(roop.globals.execution_providers)
+            else roop.globals.execution_providers
         )
         self._landmark_2d106_session = onnxruntime.InferenceSession(
             model_path, sess_options, providers=providers
