@@ -4,7 +4,13 @@ import numpy as np
 import onnxruntime
 import roop.globals
 
-from roop.perf_profile import augment_providers, get_session_options
+from roop.perf_profile import (
+    augment_providers,
+    get_session_options,
+    get_session_options_with_cuda_graphs,
+    should_use_cuda_graphs,
+    should_use_fp16_models,
+)
 from roop.typing import Face, Frame, FaceSet
 from roop.utilities import resolve_relative_path, conditional_download
 
@@ -43,9 +49,16 @@ class Enhance_GPEN:
                     downloaded = os.path.join(models_dir, os.path.basename(url))
                     if downloaded != model_path and os.path.exists(downloaded):
                         os.rename(downloaded, model_path)
+            if should_use_fp16_models():
+                from roop.model_manager import get_fp16_model_path
+                model_path = get_fp16_model_path(model_path)
+            if should_use_cuda_graphs():
+                _sess_opts = get_session_options_with_cuda_graphs()
+            else:
+                _sess_opts = get_session_options()
             self.model_gpen = onnxruntime.InferenceSession(
                 model_path,
-                get_session_options(),
+                _sess_opts,
                 providers=augment_providers(roop.globals.execution_providers),
             )
             self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")

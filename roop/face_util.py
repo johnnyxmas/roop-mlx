@@ -56,8 +56,24 @@ def release_face_analyser() -> None:
         FACE_ANALYSER = None
 
 
+def _use_yolo() -> bool:
+    """Return True if the user selected the YOLO face detector."""
+    cfg = getattr(roop.globals, "CFG", None)
+    if cfg is None:
+        return False
+    return getattr(cfg, "face_detector", "InsightFace") == "YOLOv8n-Face"
+
+
 def get_first_face(frame: Frame) -> Any:
     try:
+        if _use_yolo():
+            from roop.face_detector import get_yolo_detector
+            faces = get_yolo_detector().detect(
+                frame, need_recognition=True, need_landmarks_106=True,
+            )
+            if faces:
+                return min(faces, key=lambda x: x.bbox[0])
+            return None
         faces = get_face_analyser().get(frame)
         return min(faces, key=lambda x: x.bbox[0])
     #   return sorted(faces, reverse=True, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))[0]
@@ -67,6 +83,34 @@ def get_first_face(frame: Frame) -> Any:
 
 def get_all_faces(frame: Frame) -> Any:
     try:
+        if _use_yolo():
+            from roop.face_detector import get_yolo_detector
+            faces = get_yolo_detector().detect(
+                frame, need_recognition=True, need_landmarks_106=True,
+            )
+            return faces  # already sorted by x
+        faces = get_face_analyser().get(frame)
+        return sorted(faces, key=lambda x: x.bbox[0])
+    except:
+        return None
+
+
+def get_all_faces_fast(frame: Frame, need_recognition=False,
+                       need_landmarks_106=False) -> Any:
+    """Fast face detection for video frames.
+
+    When YOLO is selected, this avoids loading sub-models (ArcFace,
+    2d106det) unless the caller explicitly needs them.  Falls back to
+    full InsightFace when that backend is selected.
+    """
+    try:
+        if _use_yolo():
+            from roop.face_detector import get_yolo_detector
+            return get_yolo_detector().detect(
+                frame,
+                need_recognition=need_recognition,
+                need_landmarks_106=need_landmarks_106,
+            )
         faces = get_face_analyser().get(frame)
         return sorted(faces, key=lambda x: x.bbox[0])
     except:

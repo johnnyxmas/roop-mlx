@@ -8,7 +8,10 @@ from skimage import transform as trans
 import roop.globals
 
 from roop.FaceSet import FaceSet
-from roop.perf_profile import augment_providers, get_session_options
+from roop.perf_profile import (
+    augment_providers,
+    get_session_options,
+)
 from roop.typing import Face, Frame
 from roop.utilities import resolve_relative_path, conditional_download
 
@@ -85,6 +88,8 @@ class FaceSwapFaceFusion:
             if not os.path.exists(model_path):
                 conditional_download(models_dir, [[config["url"]]])
 
+            # HyperSwap output reads don't survive CUDA graph capture correctly;
+            # use standard session options (no CUDA graph).
             sess_options = get_session_options()
             providers = augment_providers(roop.globals.execution_providers)
             self.model_swap = onnxruntime.InferenceSession(
@@ -129,19 +134,18 @@ class FaceSwapFaceFusion:
             source_face = source_faceset
             ref_images = []
 
-        io_binding = self.model_swap.io_binding()
-
         if self.swap_type in ("ghost", "hyperswap"):
-            embedding = self._convert_embedding(source_face.normed_embedding)
-            io_binding.bind_cpu_input("target", temp_frame)
-            io_binding.bind_cpu_input("source", embedding)
+            source_data = self._convert_embedding(source_face.normed_embedding)
         elif self.swap_type == "uniface":
             if not ref_images:
                 return temp_frame
-            source_crop = self._warp_face_ffhq(source_face.kps, ref_images[0])
-            io_binding.bind_cpu_input("target", temp_frame)
-            io_binding.bind_cpu_input("source", source_crop)
+            source_data = self._warp_face_ffhq(source_face.kps, ref_images[0])
+        else:
+            return temp_frame
 
+        io_binding = self.model_swap.io_binding()
+        io_binding.bind_cpu_input("target", temp_frame)
+        io_binding.bind_cpu_input("source", source_data)
         io_binding.bind_output(
             self.model_swap.get_outputs()[0].name, self.devicename, self.device_id
         )

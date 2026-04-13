@@ -17,25 +17,39 @@ def get_image_frame(filename: str):
     return None
 
 
+def _open_capture(video_path: str):
+    """Open a VideoCapture and cache it."""
+    global current_capture, current_video_path, current_frame_total
+    release_video()
+    cap = cv2.VideoCapture(video_path)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    current_capture = cap
+    current_video_path = video_path
+    current_frame_total = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+
+
 def get_video_frame(video_path: str, frame_number: int = 0) -> Optional[Frame]:
     global current_video_path, current_capture, current_frame_total
 
     if video_path != current_video_path:
-        release_video()
-        current_capture = cv2.VideoCapture(video_path)
-        
-        # Optimize video capture settings for better performance
-        current_capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer for faster seeking
-        
-        current_video_path = video_path
-        current_frame_total = current_capture.get(cv2.CAP_PROP_FRAME_COUNT)
+        _open_capture(video_path)
 
-    current_capture.set(
-        cv2.CAP_PROP_POS_FRAMES, min(current_frame_total, frame_number - 1)
-    )
+    target = min(int(current_frame_total) - 1, max(0, frame_number - 1))
+    current_capture.set(cv2.CAP_PROP_POS_FRAMES, target)
     has_frame, frame = current_capture.read()
-    if has_frame:
+    if has_frame and frame is not None and frame.size > 0:
         return frame
+
+    # Seek may have put the codec into a bad state (e.g. B-frame reference
+    # missing after a direct seek in H.264).  Reopen and retry once.
+    try:
+        _open_capture(video_path)
+        current_capture.set(cv2.CAP_PROP_POS_FRAMES, target)
+        has_frame, frame = current_capture.read()
+        if has_frame and frame is not None and frame.size > 0:
+            return frame
+    except Exception:
+        pass
     return None
 
 
@@ -48,12 +62,8 @@ def release_video():
 
 
 def get_video_frame_total(video_path: str) -> int:
-    # Optimize video capture for faster frame counting
     capture = cv2.VideoCapture(video_path)
-    
-    # Set buffer size to 1 for faster seeking
     capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    
     video_frame_total = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
     capture.release()
     return video_frame_total

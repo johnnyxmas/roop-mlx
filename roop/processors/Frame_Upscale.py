@@ -2,7 +2,13 @@ import numpy as np
 import onnxruntime
 import roop.globals
 
-from roop.perf_profile import augment_providers, get_session_options
+from roop.perf_profile import (
+    augment_providers,
+    get_session_options,
+    get_session_options_with_cuda_graphs,
+    should_use_cuda_graphs,
+    should_use_fp16_models,
+)
 from roop.utilities import resolve_relative_path, conditional_thread_semaphore
 from roop.typing import Frame
 
@@ -45,16 +51,21 @@ class Frame_Upscale:
             elif self.prev_type == "lsdirx4":
                 model_path = resolve_relative_path("../models/Frame/lsdir_x4.onnx")
                 self.scale = 4
+            if should_use_fp16_models():
+                from roop.model_manager import get_fp16_model_path
+                model_path = get_fp16_model_path(model_path)
+            if should_use_cuda_graphs():
+                _sess_opts = get_session_options_with_cuda_graphs()
+            else:
+                _sess_opts = get_session_options()
             onnxruntime.set_default_logger_severity(3)
             self.model_upscale = onnxruntime.InferenceSession(
                 model_path,
-                get_session_options(),
+                _sess_opts,
                 providers=augment_providers(roop.globals.execution_providers),
             )
             self.model_inputs = self.model_upscale.get_inputs()
-            model_outputs = self.model_upscale.get_outputs()
-            self.io_binding = self.model_upscale.io_binding()
-            self.io_binding.bind_output(model_outputs[0].name, self.devicename, self.device_id)
+            self._output_name = self.model_upscale.get_outputs()[0].name
 
     def getProcessedResolution(self, width, height):
         return (width * self.scale, height * self.scale)
@@ -132,9 +143,11 @@ class Frame_Upscale:
         for index, tile_frame in enumerate(upscale_tile_frames):
             tile_frame = self.prepare_tile_frame(tile_frame)
             with conditional_thread_semaphore():
-                self.io_binding.bind_cpu_input(self.model_inputs[0].name, tile_frame)
-                self.model_upscale.run_with_iobinding(self.io_binding)
-                ort_outs = self.io_binding.copy_outputs_to_cpu()
+                io_binding = self.model_upscale.io_binding()
+                io_binding.bind_cpu_input(self.model_inputs[0].name, tile_frame)
+                io_binding.bind_output(self._output_name, self.devicename, self.device_id)
+                self.model_upscale.run_with_iobinding(io_binding)
+                ort_outs = io_binding.copy_outputs_to_cpu()
                 result = ort_outs[0]
             upscale_tile_frames[index] = self.normalize_tile_frame(result)
         final_frame = self.merge_tile_frames(
@@ -150,5 +163,3 @@ class Frame_Upscale:
     def Release(self):
         del self.model_upscale
         self.model_upscale = None
-        del self.io_binding
-        self.io_binding = None

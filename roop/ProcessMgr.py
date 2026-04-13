@@ -8,11 +8,12 @@ from roop.ProcessOptions import ProcessOptions
 
 from roop.face_util import (
     get_first_face,
-    get_all_faces,
+    get_all_faces_fast,
     rotate_anticlockwise,
     rotate_clockwise,
     clamp_cut_values,
 )
+from roop.face_tracker import FaceTracker
 from roop.perf_profile import (
     detector_stride as _perf_detector_stride,
     scene_cut_threshold as _perf_scene_cut_threshold,
@@ -111,9 +112,6 @@ class ProcessMgr:
             self.progress_gradio = progress
         self._thread_local = thread_local()
         self.processors_by_gpu = []
-        self._tracker_last_faces = None
-        self._tracker_frames_since_detect = 0
-        self._tracker_prev_small = None
 
     def reuseOldProcessor(self, name: str):
         for p in self.processors:
@@ -127,10 +125,9 @@ class ProcessMgr:
         self.target_face_datas = target_faces
         self.num_frames_no_face = 0
         self.last_swapped_frame = None
-        self._tracker_last_faces = None
-        self._tracker_frames_since_detect = 0
-        self._tracker_prev_small = None
         self.options = options
+        # Reset all thread-local tracker state for new job
+        self._thread_local = thread_local()
         devicename = get_device()
 
         roop.globals.g_desired_face_analysis = [
@@ -380,6 +377,7 @@ class ProcessMgr:
                 self.processed_queue[threadindex].put((False, None))
                 return
             else:
+                resimg = None
                 try:
                     if self.options.frame_processing:
                         processed_frame = frame
@@ -388,12 +386,14 @@ class ProcessMgr:
                         resimg = processed_frame
                     else:
                         resimg = self.process_frame(frame)
-                    self.processed_queue[threadindex].put((True, resimg))
-                        
+                except Exception as e:
+                    print(f"[ProcessMgr] Exception in thread {threadindex}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    resimg = frame  # fall back to unprocessed frame
                 finally:
-                    # Always cleanup the original frame
                     del frame
-                # Note: resimg is now owned by the queue, don't delete it here
+                self.processed_queue[threadindex].put((True, resimg))
                 progress()
 
     def write_frames_thread(self):
@@ -436,12 +436,28 @@ class ProcessMgr:
             print("No processor defined!")
             return
 
-        cap = cv2.VideoCapture(source_video)
-        
-        # Optimize video capture for better performance
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer for faster processing
-        
-        # frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        # Use GPU-accelerated decode when enabled and available
+        use_gpu_decode = (
+            getattr(roop.globals.CFG, "use_gpu_decode", False)
+            and roop.globals.CFG.provider == "cuda"
+        )
+        if use_gpu_decode:
+            try:
+                from roop.gpu_decoder import GPUVideoCapture, gpu_decode_available
+                if gpu_decode_available():
+                    cap = GPUVideoCapture(source_video)
+                    print("[ProcessMgr] Using GPU-accelerated video decode")
+                else:
+                    cap = cv2.VideoCapture(source_video)
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception as e:
+                print(f"[ProcessMgr] GPU decode init failed ({e}), using OpenCV")
+                cap = cv2.VideoCapture(source_video)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        else:
+            cap = cv2.VideoCapture(source_video)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
         frame_count = (frame_end - frame_start) + 1
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -671,47 +687,98 @@ class ProcessMgr:
         del copyframe
         return frame
 
-    def _detect_faces_with_tracker(self, frame):
-        """Tracker-assisted face detection.
+    def _get_tracker(self):
+        """Return the FaceTracker that belongs to the calling thread."""
+        tl = self._thread_local
+        if not hasattr(tl, "face_tracker"):
+            tl.face_tracker = FaceTracker()
+            tl.tracker_last_faces = None
+            tl.tracker_frames_since_detect = 0
+            tl.tracker_prev_small = None
+        return tl
 
-        On stride=1 (memory_saver) this always runs full detection. On
-        stride>1 (balanced/max_speed) it reuses the previous frame's face
-        list for intermediate frames and forces redetection when either the
-        stride counter expires or a cheap scene-cut check trips.
+    def _needs_recognition(self):
+        """Return True if the current swap mode requires face matching."""
+        return self.options.swap_mode in ("selected",)
+
+    def _needs_landmarks_106(self):
+        """Return True if any feature requires 106-point landmarks."""
+        if self.options.restore_original_mouth:
+            return True
+        if roop.globals.autorotate_faces:
+            return True
+        for p in self.processors:
+            if p.processorname == "dmdnet":
+                return True
+        return False
+
+    def _detect_faces_with_tracker(self, frame):
+        """Tracker-assisted face detection with optical flow.
+
+        On stride=1 (memory_saver) this always runs full detection.  On
+        stride>1 (balanced/max_speed) intermediate frames use Lucas-Kanade
+        optical flow to warp cached bounding boxes and keypoints, giving
+        smooth tracking even at high strides (10-15+).  A scene-cut check
+        forces redetection when the frame changes drastically.
         """
+        tl = self._get_tracker()
         stride = _perf_detector_stride()
         if stride <= 1:
-            self._tracker_last_faces = None
-            self._tracker_prev_small = None
-            return get_all_faces(frame)
+            tl.tracker_last_faces = None
+            tl.tracker_prev_small = None
+            tl.face_tracker.reset()
+            return get_all_faces_fast(
+                frame,
+                need_recognition=self._needs_recognition(),
+                need_landmarks_106=self._needs_landmarks_106(),
+            )
 
         force_redetect = False
         try:
             small = cv2.resize(frame, (64, 64), interpolation=cv2.INTER_AREA)
-            if self._tracker_prev_small is not None:
-                diff = cv2.absdiff(small, self._tracker_prev_small)
+            if tl.tracker_prev_small is not None:
+                diff = cv2.absdiff(small, tl.tracker_prev_small)
                 if float(diff.mean()) > _perf_scene_cut_threshold():
                     force_redetect = True
-            self._tracker_prev_small = small
+            tl.tracker_prev_small = small
         except Exception:
             force_redetect = True
 
         need_detect = (
             force_redetect
-            or self._tracker_last_faces is None
-            or not self._tracker_last_faces
-            or self._tracker_frames_since_detect >= stride
+            or tl.tracker_last_faces is None
+            or not tl.tracker_last_faces
+            or tl.tracker_frames_since_detect >= stride
         )
         if need_detect:
-            faces = get_all_faces(frame)
-            self._tracker_last_faces = faces
-            self._tracker_frames_since_detect = 0
+            faces = get_all_faces_fast(
+                frame,
+                need_recognition=self._needs_recognition(),
+                need_landmarks_106=self._needs_landmarks_106(),
+            )
+            tl.tracker_last_faces = faces
+            tl.tracker_frames_since_detect = 0
+            tl.face_tracker.on_detection(frame, faces)
             return faces
 
-        self._tracker_frames_since_detect += 1
-        # Return a shallow copy so callers that clear() the list don't wipe
-        # our cached reference.
-        return list(self._tracker_last_faces)
+        tl.tracker_frames_since_detect += 1
+
+        tracked = tl.face_tracker.track(frame)
+        if tracked is not None:
+            return tracked
+
+        # Optical flow lost all faces — don't return stale keypoints from a
+        # prior scene; that produces bad alignment crops.  Fall back to a fresh
+        # detection so scene-cut frames are handled correctly.
+        faces = get_all_faces_fast(
+            frame,
+            need_recognition=self._needs_recognition(),
+            need_landmarks_106=self._needs_landmarks_106(),
+        )
+        tl.tracker_last_faces = faces
+        tl.tracker_frames_since_detect = 0
+        tl.face_tracker.on_detection(frame, faces)
+        return faces
 
     def swap_faces(self, frame, temp_frame):
         num_faces_found = 0

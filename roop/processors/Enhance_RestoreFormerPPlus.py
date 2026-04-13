@@ -3,7 +3,13 @@ import numpy as np
 import onnxruntime
 import roop.globals
 
-from roop.perf_profile import augment_providers, get_session_options
+from roop.perf_profile import (
+    augment_providers,
+    get_session_options,
+    get_session_options_with_cuda_graphs,
+    should_use_cuda_graphs,
+    should_use_fp16_models,
+)
 from roop.typing import Face, Frame, FaceSet
 from roop.utilities import resolve_relative_path
 
@@ -28,15 +34,20 @@ class Enhance_RestoreFormerPPlus:
             self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")
             self.device_id = int(self.plugin_options.get("device_id", 0))
             model_path = resolve_relative_path("../models/restoreformer_plus_plus.onnx")
+            if should_use_fp16_models():
+                from roop.model_manager import get_fp16_model_path
+                model_path = get_fp16_model_path(model_path)
+            if should_use_cuda_graphs():
+                _sess_opts = get_session_options_with_cuda_graphs()
+            else:
+                _sess_opts = get_session_options()
             self.model_restoreformerpplus = onnxruntime.InferenceSession(
                 model_path,
-                get_session_options(),
+                _sess_opts,
                 providers=augment_providers(roop.globals.execution_providers),
             )
             self.model_inputs = self.model_restoreformerpplus.get_inputs()
-            model_outputs = self.model_restoreformerpplus.get_outputs()
-            self.io_binding = self.model_restoreformerpplus.io_binding()
-            self.io_binding.bind_output(model_outputs[0].name, self.devicename, self.device_id)
+            self._output_name = self.model_restoreformerpplus.get_outputs()[0].name
 
     def Run(
         self, source_faceset: FaceSet, target_face: Face, temp_frame: Frame
@@ -49,11 +60,11 @@ class Enhance_RestoreFormerPPlus:
         temp_frame = (temp_frame - 0.5) / 0.5
         temp_frame = np.expand_dims(temp_frame, axis=0).transpose(0, 3, 1, 2)
 
-        self.io_binding.bind_cpu_input(
-            self.model_inputs[0].name, temp_frame
-        )  # .astype(np.float32)
-        self.model_restoreformerpplus.run_with_iobinding(self.io_binding)
-        ort_outs = self.io_binding.copy_outputs_to_cpu()
+        io_binding = self.model_restoreformerpplus.io_binding()
+        io_binding.bind_cpu_input(self.model_inputs[0].name, temp_frame)
+        io_binding.bind_output(self._output_name, self.devicename, self.device_id)
+        self.model_restoreformerpplus.run_with_iobinding(io_binding)
+        ort_outs = io_binding.copy_outputs_to_cpu()
         result = ort_outs[0][0]
         del ort_outs
 
@@ -67,5 +78,3 @@ class Enhance_RestoreFormerPPlus:
     def Release(self):
         del self.model_restoreformerpplus
         self.model_restoreformerpplus = None
-        del self.io_binding
-        self.io_binding = None

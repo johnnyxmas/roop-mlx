@@ -1,6 +1,11 @@
-"""Download all required models during setup."""
-import os
+"""Download all required models during setup and convert to FP16."""
+import subprocess
 import sys
+
+# Upgrade pip before anything else so all subsequent installs use the latest resolver
+subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
+
+import os
 import urllib.request
 import urllib.error
 from tqdm import tqdm
@@ -10,15 +15,26 @@ MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
 
 DOWNLOADS = {
     "models": [
+        # face swap (InsightFace)
         "https://huggingface.co/countfloyd/deepfake/resolve/main/inswapper_128.onnx",
         "https://huggingface.co/facefusion/models-3.0.0/resolve/main/inswapper_128_fp16.onnx",
         "https://huggingface.co/countfloyd/deepfake/resolve/main/reswapper_128.onnx",
         "https://huggingface.co/countfloyd/deepfake/resolve/main/reswapper_256.onnx",
+        # face swap (HyperSwap)
+        "https://huggingface.co/facefusion/models-3.3.0/resolve/main/hyperswap_1a_256.onnx",
+        "https://huggingface.co/facefusion/models-3.3.0/resolve/main/hyperswap_1b_256.onnx",
+        "https://huggingface.co/facefusion/models-3.3.0/resolve/main/hyperswap_1c_256.onnx",
+        # face enhancement
         "https://huggingface.co/countfloyd/deepfake/resolve/main/GFPGANv1.4.onnx",
         "https://github.com/csxmli2016/DMDNet/releases/download/v1/DMDNet.pth",
         "https://huggingface.co/countfloyd/deepfake/resolve/main/GPEN-BFR-512.onnx",
+        "https://huggingface.co/facefusion/models-3.0.0/resolve/main/gpen_bfr_1024.onnx",
+        "https://huggingface.co/facefusion/models-3.0.0/resolve/main/gpen_bfr_2048.onnx",
         "https://huggingface.co/countfloyd/deepfake/resolve/main/restoreformer_plus_plus.onnx",
+        # face masking
         "https://huggingface.co/countfloyd/deepfake/resolve/main/xseg.onnx",
+        # YOLO face detection
+        "https://huggingface.co/facefusion/models-3.0.0/resolve/main/yoloface_8n.onnx",
     ],
     "models/CLIP": [
         "https://huggingface.co/countfloyd/deepfake/resolve/main/rd64-uni-refined.pth",
@@ -43,11 +59,24 @@ DOWNLOADS = {
     ],
 }
 
+# GPEN downloads have different filenames than what the app expects
+RENAMES = {
+    "gpen_bfr_1024.onnx": "GPEN-BFR-1024.onnx",
+    "gpen_bfr_2048.onnx": "GPEN-BFR-2048.onnx",
+}
+
 
 def download_file(url: str, dest_dir: str) -> bool:
     filename = os.path.basename(urlparse(url).path)
     filepath = os.path.join(dest_dir, filename)
+    final_name = RENAMES.get(filename)
+    if final_name:
+        final_path = os.path.join(dest_dir, final_name)
+        if os.path.exists(final_path):
+            return True
     if os.path.exists(filepath):
+        if final_name:
+            os.rename(filepath, os.path.join(dest_dir, final_name))
         return True
     try:
         request = urllib.request.urlopen(url)
@@ -60,7 +89,23 @@ def download_file(url: str, dest_dir: str) -> bool:
             url, filepath,
             reporthook=lambda count, block_size, total_size: progress.update(block_size),
         )
+    if final_name:
+        os.rename(filepath, os.path.join(dest_dir, final_name))
+        print(f"  Renamed {filename} -> {final_name}")
     return True
+
+
+def convert_fp16():
+    """Convert all eligible ONNX models to FP16."""
+    try:
+        sys.path.insert(0, os.path.dirname(__file__))
+        from roop.model_manager import convert_models_to_fp16
+        print("\nConverting ONNX models to FP16...")
+        convert_models_to_fp16()
+        print("FP16 conversion complete.")
+    except Exception as e:
+        print(f"\nFP16 conversion skipped: {e}")
+        print("(Install onnxconverter-common for FP16 support)")
 
 
 def main():
@@ -78,6 +123,8 @@ def main():
             print(f"  {url}")
         sys.exit(1)
     print("\nAll models downloaded successfully.")
+
+    convert_fp16()
 
 
 if __name__ == "__main__":

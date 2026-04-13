@@ -3,7 +3,13 @@ import cv2
 import onnxruntime
 import roop.globals
 
-from roop.perf_profile import augment_providers, get_session_options
+from roop.perf_profile import (
+    augment_providers,
+    get_session_options,
+    get_session_options_with_cuda_graphs,
+    should_use_cuda_graphs,
+    should_use_fp16_models,
+)
 from roop.typing import Frame
 from roop.utilities import resolve_relative_path
 
@@ -24,10 +30,17 @@ class Mask_XSeg:
         self.plugin_options = plugin_options
         if self.model_xseg is None:
             model_path = resolve_relative_path("../models/xseg.onnx")
+            if should_use_fp16_models():
+                from roop.model_manager import get_fp16_model_path
+                model_path = get_fp16_model_path(model_path)
+            if should_use_cuda_graphs():
+                _sess_opts = get_session_options_with_cuda_graphs()
+            else:
+                _sess_opts = get_session_options()
             onnxruntime.set_default_logger_severity(3)
             self.model_xseg = onnxruntime.InferenceSession(
                 model_path,
-                get_session_options(),
+                _sess_opts,
                 providers=augment_providers(roop.globals.execution_providers),
             )
             self.model_inputs = self.model_xseg.get_inputs()

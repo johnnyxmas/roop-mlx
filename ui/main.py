@@ -18,6 +18,38 @@ roop.globals.skip_audio = None
 roop.globals.use_batch = None
 
 
+def _purge_corrupt_temp_images(temp_dir: str):
+    """Remove 0-byte or unreadable image files left by previous sessions.
+
+    Gradio caches ImageEditor layers (background.png etc.) to disk.  If a
+    prior session wrote a corrupt file (e.g. after a codec assertion crash),
+    PIL raises UnidentifiedImageError during input preprocessing and crashes
+    the event handler before our code even runs.  Cleaning them up at startup
+    prevents the stale cache from causing crashes in the new session.
+    """
+    import glob
+    image_exts = ("*.png", "*.jpg", "*.jpeg", "*.webp")
+    removed = 0
+    for pattern in image_exts:
+        for path in glob.glob(os.path.join(temp_dir, "**", pattern), recursive=True):
+            try:
+                if os.path.getsize(path) == 0:
+                    os.remove(path)
+                    removed += 1
+                    continue
+                from PIL import Image
+                with Image.open(path):
+                    pass  # valid file
+            except Exception:
+                try:
+                    os.remove(path)
+                    removed += 1
+                except OSError:
+                    pass
+    if removed:
+        print(f"[startup] Removed {removed} corrupt image file(s) from temp dir")
+
+
 def prepare_environment():
     roop.globals.output_path = os.path.abspath(os.path.join(os.getcwd(), "output"))
     os.makedirs(roop.globals.output_path, exist_ok=True)
@@ -28,6 +60,7 @@ def prepare_environment():
     os.makedirs(os.environ["TEMP"], exist_ok=True)
     os.environ["GRADIO_TEMP_DIR"] = os.environ["TEMP"]
     os.environ["GRADIO_ANALYTICS_ENABLED"] = "0"
+    _purge_corrupt_temp_images(os.environ["TEMP"])
 
 
 def run():

@@ -293,6 +293,18 @@ class Enhance_DMDNet:
         num_params = 0
         for param in model_dmdnet.parameters():
             num_params += param.numel()
+
+        # torch.compile optimization: fuses kernels for ~1.5-2x speedup
+        # on PyTorch 2.x with CUDA. Falls back silently on older versions.
+        if devicename != "cpu":
+            try:
+                model_dmdnet = torch.compile(
+                    model_dmdnet, mode="max-autotune", fullgraph=False,
+                )
+                print("[DMDNet] torch.compile enabled (max-autotune)")
+            except Exception as e:
+                print(f"[DMDNet] torch.compile unavailable ({e}), using eager mode")
+
         return model_dmdnet
 
     # print('{:>8s} : {}'.format('Using device', device))

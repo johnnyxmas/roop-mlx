@@ -1146,6 +1146,7 @@ def test_all_swappers(
     frame_source = current_frame.copy()
     output_files = []
     for swap_model in model_swap_choices:
+        print(f"[test_all_swappers] Testing {swap_model}...")
         options = ProcessOptions(
             swap_model,
             get_processing_plugins(None, swap_model),
@@ -1162,7 +1163,9 @@ def test_all_swappers(
         )
         swapped_frame = live_swap(frame_source.copy(), options)
         if swapped_frame is None:
+            print(f"[test_all_swappers] {swap_model} produced no output (no face?)")
             continue
+        print(f"[test_all_swappers] {swap_model} done")
         safe_model = "".join(ch if ch.isalnum() else "_" for ch in swap_model).strip("_")
         target_basename = os.path.splitext(os.path.basename(filename))[0]
         output_filename = os.path.join(

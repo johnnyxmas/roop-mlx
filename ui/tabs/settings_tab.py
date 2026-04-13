@@ -19,6 +19,7 @@ video_codecs = [
 ]
 
 performance_profiles = ["memory_saver", "balanced", "max_speed"]
+face_detectors = ["InsightFace", "YOLOv8n-Face"]
 
 providerlist = None
 settings_controls = []
@@ -157,9 +158,26 @@ TOOLTIPS = {
         "How often to run full face detection in <b>max_speed</b> mode.",
         "1 = detect every frame (safest).",
         "3–5 = reuse previous boxes for intermediate frames (faster).",
+        "Intermediate frames now use optical-flow tracking for smooth "
+        "results even at high strides (10–15).",
         "A scene-cut check forces redetection when the frame changes "
         "drastically, so 3 is a safe default for talking-head video.",
         "Ignored unless profile is max_speed.",
+    ],
+    "face_detector": [
+        "Face detection backend used to find faces in each frame.",
+        "<b>InsightFace</b>: Buffalo_l RetinaFace — accurate, moderate "
+        "speed. Default.",
+        "<b>YOLOv8n-Face</b>: YOLO-based detector — 3–5× faster, "
+        "slightly less accurate on tiny/occluded faces.",
+        "Both backends produce the same face data for the swap pipeline.",
+    ],
+    "use_gpu_decode": [
+        "Use FFmpeg hardware-accelerated video decoding (NVDEC / DXVA2).",
+        "Faster than OpenCV CPU decode, especially for high-resolution "
+        "video (1080p+).",
+        "Falls back to software decode automatically if no hardware "
+        "decoder is available.",
     ],
 }
 
@@ -346,6 +364,25 @@ def settings_tab():
                     interactive=True,
                 )
                 tip("default_det_size")
+                settings_controls.append(
+                    gr.Dropdown(
+                        face_detectors,
+                        label="Face Detector",
+                        value=roop.globals.CFG.face_detector,
+                        elem_id="face_detector",
+                        interactive=True,
+                    )
+                )
+                tip("face_detector")
+                settings_controls.append(
+                    gr.Checkbox(
+                        label="GPU Video Decode (NVDEC)",
+                        value=roop.globals.CFG.use_gpu_decode,
+                        elem_id="use_gpu_decode",
+                        interactive=True,
+                    )
+                )
+                tip("use_gpu_decode")
                 settings_controls.append(
                     gr.Checkbox(
                         label="Force CPU for Face Analyser",

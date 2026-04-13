@@ -177,58 +177,15 @@ def pre_check() -> bool:
         )
         return False
 
-    download_directory_path = util.resolve_relative_path("../models")
-    util.conditional_download(
-        download_directory_path,
-        [
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/inswapper_128.onnx",
-            "https://huggingface.co/facefusion/models-3.0.0/resolve/main/inswapper_128_fp16.onnx",
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/reswapper_128.onnx",
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/reswapper_256.onnx",
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/GFPGANv1.4.onnx",
-            "https://github.com/csxmli2016/DMDNet/releases/download/v1/DMDNet.pth",
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/GPEN-BFR-512.onnx",
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/restoreformer_plus_plus.onnx",
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/xseg.onnx",
-        ],
-    )
-    download_directory_path = util.resolve_relative_path("../models/CLIP")
-    util.conditional_download(
-        download_directory_path,
-        [
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/rd64-uni-refined.pth",
-        ],
-    )
-    download_directory_path = util.resolve_relative_path("../models/buffalo_l")
-    util.conditional_download(
-        download_directory_path,
-        [
-            "https://huggingface.co/halllooo/buffalo_l/resolve/main/1k3d68.onnx",
-            "https://huggingface.co/halllooo/buffalo_l/resolve/main/2d106det.onnx",
-            "https://huggingface.co/halllooo/buffalo_l/resolve/main/det_10g.onnx",
-            "https://huggingface.co/halllooo/buffalo_l/resolve/main/genderage.onnx",
-            "https://huggingface.co/halllooo/buffalo_l/resolve/main/w600k_r50.onnx",
-        ],
-    )
-    download_directory_path = util.resolve_relative_path("../models/CodeFormer")
-    util.conditional_download(
-        download_directory_path,
-        [
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/CodeFormerv0.1.onnx",
-        ],
-    )
-    download_directory_path = util.resolve_relative_path("../models/Frame")
-    util.conditional_download(
-        download_directory_path,
-        [
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/deoldify_artistic.onnx",
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/deoldify_stable.onnx",
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/isnet-general-use.onnx",
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/real_esrgan_x4.onnx",
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/real_esrgan_x2.onnx",
-            "https://huggingface.co/countfloyd/deepfake/resolve/main/lsdir_x4.onnx",
-        ],
-    )
+    # Download ALL models via the central model registry
+    from roop.model_manager import download_all_models, convert_models_to_fp16
+
+    update_status("Checking / downloading models...")
+    download_all_models()
+
+    # Convert eligible ONNX models to FP16 for faster inference
+    update_status("Preparing FP16 model variants...")
+    convert_models_to_fp16()
 
     if not shutil.which("ffmpeg"):
         update_status("ffmpeg is not installed.")

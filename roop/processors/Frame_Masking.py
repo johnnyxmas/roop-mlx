@@ -3,7 +3,13 @@ import numpy as np
 import onnxruntime
 import roop.globals
 
-from roop.perf_profile import augment_providers, get_session_options
+from roop.perf_profile import (
+    augment_providers,
+    get_session_options,
+    get_session_options_with_cuda_graphs,
+    should_use_cuda_graphs,
+    should_use_fp16_models,
+)
 from roop.utilities import resolve_relative_path
 from roop.typing import Frame
 
@@ -29,15 +35,20 @@ class Frame_Masking:
             self.devicename = self.devicename.replace("mps", "cpu")
             self.device_id = int(self.plugin_options.get("device_id", 0))
             model_path = resolve_relative_path("../models/Frame/isnet-general-use.onnx")
+            if should_use_fp16_models():
+                from roop.model_manager import get_fp16_model_path
+                model_path = get_fp16_model_path(model_path)
+            if should_use_cuda_graphs():
+                _sess_opts = get_session_options_with_cuda_graphs()
+            else:
+                _sess_opts = get_session_options()
             self.model_masking = onnxruntime.InferenceSession(
                 model_path,
-                get_session_options(),
+                _sess_opts,
                 providers=augment_providers(roop.globals.execution_providers),
             )
             self.model_inputs = self.model_masking.get_inputs()
-            model_outputs = self.model_masking.get_outputs()
-            self.io_binding = self.model_masking.io_binding()
-            self.io_binding.bind_output(model_outputs[0].name, self.devicename, self.device_id)
+            self._output_name = self.model_masking.get_outputs()[0].name
 
     def Run(self, temp_frame: Frame) -> Frame:
         # Pre process:Resize, BGR->RGB, float32 cast
@@ -50,9 +61,11 @@ class Frame_Masking:
         input_image = np.expand_dims(input_image, axis=0)
         input_image = input_image.astype("float32")
 
-        self.io_binding.bind_cpu_input(self.model_inputs[0].name, input_image)
-        self.model_masking.run_with_iobinding(self.io_binding)
-        ort_outs = self.io_binding.copy_outputs_to_cpu()
+        io_binding = self.model_masking.io_binding()
+        io_binding.bind_cpu_input(self.model_inputs[0].name, input_image)
+        io_binding.bind_output(self._output_name, self.devicename, self.device_id)
+        self.model_masking.run_with_iobinding(io_binding)
+        ort_outs = io_binding.copy_outputs_to_cpu()
         result = ort_outs[0][0]
         del ort_outs
         # Post process:squeeze, Sigmoid, Normarize, uint8 cast
@@ -74,5 +87,3 @@ class Frame_Masking:
     def Release(self):
         del self.model_masking
         self.model_masking = None
-        del self.io_binding
-        self.io_binding = None
