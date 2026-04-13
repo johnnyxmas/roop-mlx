@@ -5,9 +5,7 @@ import roop.globals
 
 from roop.perf_profile import (
     augment_providers,
-    get_session_options,
-    get_session_options_with_cuda_graphs,
-    should_use_cuda_graphs,
+    get_enhancer_session_options,
     should_use_fp16_models,
 )
 from roop.typing import Face, Frame, FaceSet
@@ -37,10 +35,7 @@ class Enhance_RestoreFormerPPlus:
             if should_use_fp16_models():
                 from roop.model_manager import get_fp16_model_path
                 model_path = get_fp16_model_path(model_path)
-            if should_use_cuda_graphs():
-                _sess_opts = get_session_options_with_cuda_graphs()
-            else:
-                _sess_opts = get_session_options()
+            _sess_opts = get_enhancer_session_options()
             self.model_restoreformerpplus = onnxruntime.InferenceSession(
                 model_path,
                 _sess_opts,

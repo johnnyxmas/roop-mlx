@@ -5,9 +5,7 @@ import roop.globals
 
 from roop.perf_profile import (
     augment_providers,
-    get_session_options,
-    get_session_options_with_cuda_graphs,
-    should_use_cuda_graphs,
+    get_enhancer_session_options,
     should_use_fp16_models,
 )
 from roop.typing import Face, Frame, FaceSet
@@ -37,10 +35,7 @@ class Enhance_GFPGAN:
                 from roop.model_manager import get_fp16_model_path
                 model_path = get_fp16_model_path(model_path)
 
-            if should_use_cuda_graphs():
-                sess_options = get_session_options_with_cuda_graphs()
-            else:
-                sess_options = get_session_options()
+            sess_options = get_enhancer_session_options()
             providers = augment_providers(roop.globals.execution_providers)
             self.model_gfpgan = onnxruntime.InferenceSession(
                 model_path, sess_options, providers=providers

@@ -59,6 +59,28 @@ def get_session_options() -> onnxruntime.SessionOptions:
     return sess_options
 
 
+def get_enhancer_session_options() -> onnxruntime.SessionOptions:
+    """Session options for face/frame enhancement models.
+
+    Enhancement models (GFPGAN, GPEN, CodeFormer, RestoreFormer++) run once
+    per face — not thousands of times like the swap model.  Using the BFC
+    arena allocators on balanced/max_speed fragments VRAM and causes OOM
+    when the swap model's arena is already holding most of the budget.
+    Always disable the arena for these models regardless of active profile.
+    CUDA graphs are also skipped: enhancers have variable-size inputs and
+    running alongside large swap sessions makes graph capture unreliable.
+    """
+    opts = onnxruntime.SessionOptions()
+    opts.graph_optimization_level = (
+        onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+    )
+    opts.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+    opts.enable_cpu_mem_arena = False
+    opts.enable_mem_pattern = False
+    opts.enable_mem_reuse = False
+    return opts
+
+
 def should_preallocate_io() -> bool:
     """Preallocate CUDA input OrtValues and reuse via update_inplace."""
     return current_profile() in (BALANCED, MAX_SPEED)
