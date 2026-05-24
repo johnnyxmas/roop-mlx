@@ -111,6 +111,7 @@ class ProcessMgr:
         if progress is not None:
             self.progress_gradio = progress
         self._thread_local = thread_local()
+        # Kept for plumbing compatibility -- single-device on Apple Silicon.
         self.processors_by_gpu = []
 
     def reuseOldProcessor(self, name: str):
@@ -166,7 +167,7 @@ class ProcessMgr:
                 module = "roop.processors." + classname
                 p = str_to_class(module, classname)
             if p is not None:
-                extoption.update({"devicename": devicename, "device_id": roop.globals.cuda_device_id})
+                extoption.update({"devicename": devicename, "device_id": 0})
                 if p.type == "swap":
                     extoption.update({"modelname": self._resolve_modelname(self.options.swap_modelname)})
                 p.Initialize(extoption)
@@ -175,13 +176,7 @@ class ProcessMgr:
                 print(f"Not using {module}")
         self.processors = newprocessors
 
-        # Multi-GPU: build a second processor set for GPU 1
         self.processors_by_gpu = [self.processors]
-        if roop.globals.multi_gpu:
-            gpu1 = self._build_processors_for_gpu(1, options, devicename)
-            if gpu1:
-                self.processors_by_gpu.append(gpu1)
-                print(f"Multi-GPU enabled: using {len(self.processors_by_gpu)} GPUs")
 
         if (
             isinstance(self.options.imagemask, dict)
@@ -220,43 +215,6 @@ class ProcessMgr:
     def _resolve_modelname(self, swap_modelname: str) -> str:
         """Return the model filename or display name depending on processor type."""
         return self.INSIGHTFACE_MODEL_FILES.get(swap_modelname, swap_modelname)
-
-    def _build_processors_for_gpu(self, gpu_id: int, options, devicename: str):
-        """Create a fresh processor set bound to gpu_id. Returns None if unavailable."""
-        import torch
-        from roop.core import decode_execution_providers
-
-        if not torch.cuda.is_available() or gpu_id >= torch.cuda.device_count():
-            return None
-
-        saved_providers = roop.globals.execution_providers
-        saved_device_id = roop.globals.cuda_device_id
-        try:
-            roop.globals.cuda_device_id = gpu_id
-            roop.globals.execution_providers = decode_execution_providers(["cuda"])
-            new_processors = []
-            for key, extoption in options.processors.items():
-                extoption_copy = dict(extoption)
-                extoption_copy["devicename"] = devicename
-                extoption_copy["device_id"] = gpu_id
-                classname = self.plugins.get(key)
-                if classname is None:
-                    continue
-                module = "roop.processors." + classname
-                p = str_to_class(module, classname)
-                if p is None:
-                    continue
-                if p.type == "swap":
-                    extoption_copy["modelname"] = self._resolve_modelname(options.swap_modelname)
-                p.Initialize(extoption_copy)
-                new_processors.append(p)
-            return new_processors if new_processors else None
-        except Exception as e:
-            print(f"Warning: Could not initialise processors on GPU {gpu_id}: {e}")
-            return None
-        finally:
-            roop.globals.execution_providers = saved_providers
-            roop.globals.cuda_device_id = saved_device_id
 
     def run_batch(self, source_files, target_files, threads: int = 1):
         import gc
@@ -436,27 +394,8 @@ class ProcessMgr:
             print("No processor defined!")
             return
 
-        # Use GPU-accelerated decode when enabled and available
-        use_gpu_decode = (
-            getattr(roop.globals.CFG, "use_gpu_decode", False)
-            and roop.globals.CFG.provider == "cuda"
-        )
-        if use_gpu_decode:
-            try:
-                from roop.gpu_decoder import GPUVideoCapture, gpu_decode_available
-                if gpu_decode_available():
-                    cap = GPUVideoCapture(source_video)
-                    print("[ProcessMgr] Using GPU-accelerated video decode")
-                else:
-                    cap = cv2.VideoCapture(source_video)
-                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            except Exception as e:
-                print(f"[ProcessMgr] GPU decode init failed ({e}), using OpenCV")
-                cap = cv2.VideoCapture(source_video)
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        else:
-            cap = cv2.VideoCapture(source_video)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        cap = cv2.VideoCapture(source_video)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         frame_count = (frame_end - frame_start) + 1
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -574,35 +513,15 @@ class ProcessMgr:
         memory_usage = self._psutil_process.memory_info().rss / 1024 / 1024 / 1024
         max_memory_gb = roop.globals.max_memory if roop.globals.max_memory else 16
 
-        # GPU info
+        # On Apple Silicon RAM == VRAM (unified memory) -- nothing extra to query.
         gpu_memory_info = ""
-        gpu_cleanup_needed = False
-        if (
-            "CUDAExecutionProvider" in roop.globals.execution_providers
-            and hasattr(roop.globals, 'torch') and roop.globals.torch.cuda.is_available()
-        ):
-            try:
-                gpu_memory_used = roop.globals.torch.cuda.memory_allocated() / 1024**3
-                gpu_memory_total = roop.globals.torch.cuda.get_device_properties(0).total_memory / 1024**3
-                gpu_usage_percent = (gpu_memory_used / gpu_memory_total) * 100
-                gpu_memory_info = f", GPU: {gpu_memory_used:.1f}/{gpu_memory_total:.1f}GB ({gpu_usage_percent:.1f}%)"
-                if gpu_usage_percent > 90:
-                    gpu_cleanup_needed = True
-            except Exception:
-                gpu_memory_info = ", GPU: N/A"
 
-        # Throttled GC — at most once every _GC_COOLDOWN seconds
-        need_gc = (memory_usage > max_memory_gb * 0.9 or gpu_cleanup_needed)
+        # Throttled GC -- at most once every _GC_COOLDOWN seconds
+        need_gc = memory_usage > max_memory_gb * 0.9
         if need_gc and (now - self._last_gc_time) >= self._GC_COOLDOWN:
             self._last_gc_time = now
             gc.collect()
-            if gpu_cleanup_needed:
-                try:
-                    with roop.globals.torch.cuda.device("cuda"):
-                        roop.globals.torch.cuda.empty_cache()
-                except Exception:
-                    pass
-            print(f"Memory: {memory_usage:.2f}/{max_memory_gb}GB{gpu_memory_info} — ran cleanup")
+            print(f"Memory: {memory_usage:.2f}/{max_memory_gb}GB -- ran cleanup")
 
         progress.set_postfix(
             {
@@ -1474,34 +1393,10 @@ class ProcessMgr:
         gc.collect()
 
     def _cleanup_gpu_memory(self):
-        """Aggressive GPU memory cleanup to prevent VRAM buildup"""
+        """Apple Silicon uses unified memory -- gc.collect() is enough."""
         import gc
-        import roop.globals
-        
-        try:
-            if (
-                "CUDAExecutionProvider" in roop.globals.execution_providers
-                and hasattr(roop.globals, 'torch') and roop.globals.torch.cuda.is_available()
-            ):
-                with roop.globals.torch.cuda.device("cuda"):
-                    roop.globals.torch.cuda.empty_cache()
-                    roop.globals.torch.cuda.synchronize()
-                    roop.globals.torch.cuda.ipc_collect()
-                gc.collect()
-        except Exception:
-            pass
+        gc.collect()
 
     def _cleanup_gpu_memory_light(self):
-        """Ultra-light GPU memory cleanup that avoids any interference with encoding"""
-        import roop.globals
-        
-        try:
-            if (
-                "CUDAExecutionProvider" in roop.globals.execution_providers
-                and hasattr(roop.globals, 'torch') and roop.globals.torch.cuda.is_available()
-            ):
-                # Only empty cache without any synchronization or blocking operations
-                roop.globals.torch.cuda.empty_cache()
-                # Skip garbage collection during video processing to avoid delays
-        except Exception:
-            pass
+        """No-op on Apple Silicon (unified memory)."""
+        return None

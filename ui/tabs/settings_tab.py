@@ -20,24 +20,14 @@ available_themes = [
 image_formats = ["jpg", "png", "webp"]
 video_formats = ["avi", "mkv", "mp4", "webm"]
 video_codecs = [
-    "auto", "libx264", "libx265", "libvpx-vp9", "h264_nvenc", "hevc_nvenc",
+    "auto", "libx264", "libx265", "libvpx-vp9",
+    "h264_videotoolbox", "hevc_videotoolbox",
 ]
 
-performance_profiles = ["memory_saver", "balanced", "max_speed"]
-
-providerlist = None
 settings_controls = []
 
 
-
 def settings_tab():
-    from roop.core import suggest_execution_providers
-    from roop.utilities import get_cuda_device_list
-
-    global providerlist
-
-    providerlist = suggest_execution_providers()
-    cuda_devices = get_cuda_device_list()
     with gr.Tab("⚙ Settings"):
         with gr.Row():
             with gr.Column():
@@ -83,61 +73,11 @@ def settings_tab():
                 )
         with gr.Row():
             with gr.Column():
-                settings_controls.append(
-                    gr.Dropdown(
-                        providerlist,
-                        label="Provider",
-                        value=roop.globals.CFG.provider,
-                        elem_id="provider",
-                        interactive=True,
-                    )
-                )
-                current_cuda = None
-                if cuda_devices and roop.globals.CFG.cuda_device_id < len(
-                    cuda_devices
-                ):
-                    raw = cuda_devices[roop.globals.CFG.cuda_device_id]
-                    current_cuda = (
-                        f"{roop.globals.CFG.cuda_device_id}: "
-                        f"{raw.split(': ', 1)[1]}"
-                    )
-                cuda_device_id = gr.Dropdown(
-                    choices=cuda_devices,
-                    label="CUDA Device",
-                    value=current_cuda,
-                    interactive=bool(cuda_devices),
-                    visible=bool(cuda_devices),
-                )
-                settings_controls.append(
-                    gr.Checkbox(
-                        label="Use all GPUs (multi-GPU)",
-                        value=roop.globals.CFG.multi_gpu,
-                        elem_id="multi_gpu",
-                        interactive=True,
-                        visible=len(cuda_devices) > 1,
-                    )
-                )
                 chk_det_size = gr.Checkbox(
                     label="Use default Det-Size",
                     value=True,
                     elem_id="default_det_size",
                     interactive=True,
-                )
-                settings_controls.append(
-                    gr.Checkbox(
-                        label="GPU Video Decode (NVDEC)",
-                        value=roop.globals.CFG.use_gpu_decode,
-                        elem_id="use_gpu_decode",
-                        interactive=True,
-                    )
-                )
-                settings_controls.append(
-                    gr.Checkbox(
-                        label="Force CPU for Face Analyser",
-                        value=roop.globals.CFG.force_cpu,
-                        elem_id="force_cpu",
-                        interactive=True,
-                    )
                 )
                 max_threads = gr.Slider(
                     1,
@@ -188,7 +128,7 @@ def settings_tab():
                     0,
                     100,
                     value=roop.globals.CFG.video_quality,
-                    label="Video Quality (crf)",
+                    label="Video Quality",
                     step=1.0,
                     interactive=True,
                 )
@@ -210,35 +150,12 @@ def settings_tab():
                             interactive=True,
                         )
                     )
-                settings_controls.append(
-                    gr.Dropdown(
-                        performance_profiles,
-                        label="Performance Profile",
-                        value=roop.globals.CFG.performance_profile,
-                        elem_id="performance_profile",
-                        interactive=True,
-                    )
-                )
-                detector_stride_slider = gr.Slider(
-                    1,
-                    10,
-                    value=roop.globals.CFG.detector_stride,
-                    label="Detector Stride (max_speed only)",
-                    step=1.0,
-                    interactive=True,
-                )
                 button_apply_restart = gr.Button(
                     "Restart Server", variant="primary"
                 )
                 button_clean_temp = gr.Button("Clean temp folder")
                 button_apply_settings = gr.Button("Apply Settings")
 
-    cuda_device_id.input(
-        fn=lambda a, b="cuda_device_id": on_settings_changed_misc(
-            int(a.split(":")[0]), b
-        ),
-        inputs=[cuda_device_id],
-    )
     chk_det_size.select(fn=on_option_changed)
 
     for s in settings_controls:
@@ -254,12 +171,6 @@ def settings_tab():
     video_quality.input(
         fn=lambda a, b="video_quality": on_settings_changed_misc(a, b),
         inputs=[video_quality],
-    )
-    detector_stride_slider.input(
-        fn=lambda a, b="detector_stride": on_settings_changed_misc(
-            int(a), b
-        ),
-        inputs=[detector_stride_slider],
     )
 
     button_clean_temp.click(fn=clean_temp)

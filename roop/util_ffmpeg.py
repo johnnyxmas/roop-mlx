@@ -5,61 +5,72 @@ import roop.utilities as util
 
 from typing import List
 
-_nvenc_available = None
+_videotoolbox_available = None
 
 
-def is_nvenc_codec(codec: str) -> bool:
-    return codec is not None and "nvenc" in codec
+def is_videotoolbox_codec(codec: str) -> bool:
+    return codec is not None and "videotoolbox" in codec
 
 
-def detect_nvenc() -> bool:
-    """Probe whether NVENC encoding is available on this system."""
-    global _nvenc_available
-    if _nvenc_available is not None:
-        return _nvenc_available
+def detect_videotoolbox() -> bool:
+    """Probe whether VideoToolbox hardware encoding is available.
+
+    On Apple Silicon (and recent Intel Macs) ffmpeg exposes
+    ``h264_videotoolbox`` and ``hevc_videotoolbox``.  We dry-run a
+    0.1 s synth source so the probe matches reality, not just the
+    codec list.
+    """
+    global _videotoolbox_available
+    if _videotoolbox_available is not None:
+        return _videotoolbox_available
     try:
         subprocess.check_output(
             [
                 "ffmpeg", "-hide_banner", "-y", "-loglevel", "error",
                 "-f", "lavfi", "-i", "nullsrc=s=256x256:d=0.1",
-                "-c:v", "h264_nvenc",
+                "-c:v", "h264_videotoolbox",
                 "-f", "null", "-",
             ],
             stderr=subprocess.STDOUT,
         )
-        _nvenc_available = True
-        print("NVENC hardware encoding is available")
+        _videotoolbox_available = True
+        print("VideoToolbox hardware encoding is available")
     except Exception:
-        _nvenc_available = False
-        print("NVENC hardware encoding is NOT available, will use software encoding")
-    return _nvenc_available
+        _videotoolbox_available = False
+        print("VideoToolbox hardware encoding is NOT available, will use software encoding")
+    return _videotoolbox_available
 
 
 def get_quality_args(codec: str, quality: int) -> List[str]:
-    """Return the correct quality arguments for the given codec."""
-    if is_nvenc_codec(codec):
-        return ["-cq", str(quality), "-preset", "p4"]
+    """Return the correct quality arguments for the given codec.
+
+    VideoToolbox uses ``-q:v`` (numeric, higher is better) while
+    libx264/libx265 use ``-crf``.  We keep the same numeric value to
+    avoid breaking existing config files.
+    """
+    if is_videotoolbox_codec(codec):
+        return ["-q:v", str(quality)]
     return ["-crf", str(quality)]
 
 
 def get_software_fallback(codec: str) -> str:
-    """Return the CPU software fallback for an NVENC codec."""
-    if codec == "h264_nvenc":
+    """Return the CPU software fallback for a VideoToolbox codec."""
+    if codec == "h264_videotoolbox":
         return "libx264"
-    if codec == "hevc_nvenc":
+    if codec == "hevc_videotoolbox":
         return "libx265"
     return codec
 
 
 def resolve_codec(codec: str) -> str:
-    """Resolve 'auto' codec or validate NVENC availability, falling back to software."""
+    """Resolve 'auto' codec or validate VideoToolbox availability, falling back to software."""
     if codec == "auto":
-        if detect_nvenc():
-            return "h264_nvenc"
+        if detect_videotoolbox():
+            return "h264_videotoolbox"
         return "libx264"
-    if is_nvenc_codec(codec) and not detect_nvenc():
+    if is_videotoolbox_codec(codec) and not detect_videotoolbox():
         fallback = get_software_fallback(codec)
-        print(f"NVENC not available, falling back from {codec} to {fallback}")
+        print(f"VideoToolbox not available, falling back from {codec} to {fallback}")
         return fallback
     return codec
 
@@ -247,17 +258,16 @@ def create_video(
             dest_filename,
         ]
     )
-    if not run_ffmpeg(args) and is_nvenc_codec(codec):
+    if not run_ffmpeg(args) and is_videotoolbox_codec(codec):
         fallback = get_software_fallback(codec)
-        print(f"NVENC encoding failed, retrying with {fallback}")
+        print(f"VideoToolbox encoding failed, retrying with {fallback}")
         args[args.index(codec)] = fallback
-        # Replace NVENC quality args with software quality args
-        if "-cq" in args:
-            cq_idx = args.index("-cq")
-            quality_val = args[cq_idx + 1]
-            # Remove -cq, value, -preset, preset_value
-            del args[cq_idx:cq_idx + 4]
-            args[cq_idx:cq_idx] = ["-crf", quality_val]
+        # Swap VideoToolbox quality args for libx264/libx265 -crf style
+        if "-q:v" in args:
+            q_idx = args.index("-q:v")
+            quality_val = args[q_idx + 1]
+            del args[q_idx:q_idx + 2]
+            args[q_idx:q_idx] = ["-crf", quality_val]
         run_ffmpeg(args)
     return dest_filename
 

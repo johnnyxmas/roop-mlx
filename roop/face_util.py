@@ -1,118 +1,72 @@
-from typing import Any
-import insightface
+"""Face detection / alignment utilities.
 
-import roop.globals
-from roop.typing import Frame, Face
+The InsightFace ``FaceAnalysis`` path that lived here is gone -- it
+was an ONNX Runtime consumer.  The detector indirection now always
+goes through ``roop.face_detector`` (which itself is a stub awaiting
+MLX wiring).
+
+The pure-NumPy / OpenCV alignment helpers (``estimate_norm``,
+``align_crop``, ``transform``, ``trans_points*``) are unchanged --
+they have no GPU dependency.
+"""
+
+from typing import Any
 
 import cv2
 import numpy as np
 from skimage import transform as trans
+
 from roop.capturer import get_video_frame
-from roop.utilities import resolve_relative_path, conditional_thread_semaphore
-
-FACE_ANALYSER = None
-
-
-def get_face_analyser() -> Any:
-    global FACE_ANALYSER
-
-    with conditional_thread_semaphore():
-        if (
-            FACE_ANALYSER is None
-            or roop.globals.g_current_face_analysis
-            != roop.globals.g_desired_face_analysis
-        ):
-            model_path = resolve_relative_path("..")
-            # removed genderage
-            allowed_modules = roop.globals.g_desired_face_analysis
-            roop.globals.g_current_face_analysis = roop.globals.g_desired_face_analysis
-            if roop.globals.CFG.force_cpu:
-                print("Forcing CPU for Face Analysis")
-                FACE_ANALYSER = insightface.app.FaceAnalysis(
-                    name="buffalo_l",
-                    root=model_path,
-                    providers=["CPUExecutionProvider"],
-                    allowed_modules=allowed_modules,
-                )
-            else:
-                FACE_ANALYSER = insightface.app.FaceAnalysis(
-                    name="buffalo_l",
-                    root=model_path,
-                    providers=roop.globals.execution_providers,
-                    allowed_modules=allowed_modules,
-                )
-            FACE_ANALYSER.prepare(
-                ctx_id=roop.globals.cuda_device_id,
-                det_size=(640, 640) if roop.globals.default_det_size else (320, 320),
-            )
-    return FACE_ANALYSER
-
-
-def release_face_analyser() -> None:
-    """Release the global face analyzer to free memory"""
-    global FACE_ANALYSER
-    if FACE_ANALYSER is not None:
-        del FACE_ANALYSER
-        FACE_ANALYSER = None
-
-
-def _use_yolo() -> bool:
-    """Use YOLOv8n-Face on memory_saver profile; InsightFace on everything else."""
-    from roop.perf_profile import use_yolo_detector
-    return use_yolo_detector()
+from roop.typing import Frame, Face
 
 
 def get_first_face(frame: Frame) -> Any:
     try:
-        if _use_yolo():
-            from roop.face_detector import get_yolo_detector
-            faces = get_yolo_detector().detect(
-                frame, need_recognition=True, need_landmarks_106=True,
-            )
-            if faces:
-                return min(faces, key=lambda x: x.bbox[0])
-            return None
-        faces = get_face_analyser().get(frame)
-        return min(faces, key=lambda x: x.bbox[0])
-    #   return sorted(faces, reverse=True, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))[0]
-    except:
+        from roop.face_detector import get_yolo_detector
+        faces = get_yolo_detector().detect(
+            frame, need_recognition=True, need_landmarks_106=True,
+        )
+        if faces:
+            return min(faces, key=lambda x: x.bbox[0])
+        return None
+    except NotImplementedError:
+        raise
+    except Exception:
         return None
 
 
 def get_all_faces(frame: Frame) -> Any:
     try:
-        if _use_yolo():
-            from roop.face_detector import get_yolo_detector
-            faces = get_yolo_detector().detect(
-                frame, need_recognition=True, need_landmarks_106=True,
-            )
-            return faces  # already sorted by x
-        faces = get_face_analyser().get(frame)
-        return sorted(faces, key=lambda x: x.bbox[0])
-    except:
+        from roop.face_detector import get_yolo_detector
+        return get_yolo_detector().detect(
+            frame, need_recognition=True, need_landmarks_106=True,
+        )
+    except NotImplementedError:
+        raise
+    except Exception:
         return None
 
 
-def get_all_faces_fast(frame: Frame, need_recognition=False,
-                       need_landmarks_106=False) -> Any:
-    """Fast face detection for video frames.
-
-    When YOLO is selected, this avoids loading sub-models (ArcFace,
-    2d106det) unless the caller explicitly needs them.  Falls back to
-    full InsightFace when that backend is selected.
-    """
+def get_all_faces_fast(frame: Frame, need_recognition: bool = False,
+                       need_landmarks_106: bool = False) -> Any:
+    """Detect faces without loading optional sub-models unless needed."""
     try:
-        if _use_yolo():
-            from roop.face_detector import get_yolo_detector
-            return get_yolo_detector().detect(
-                frame,
-                need_recognition=need_recognition,
-                need_landmarks_106=need_landmarks_106,
-            )
-        faces = get_face_analyser().get(frame)
-        return sorted(faces, key=lambda x: x.bbox[0])
-    except:
+        from roop.face_detector import get_yolo_detector
+        return get_yolo_detector().detect(
+            frame,
+            need_recognition=need_recognition,
+            need_landmarks_106=need_landmarks_106,
+        )
+    except NotImplementedError:
+        raise
+    except Exception:
         return None
+
+
+def release_face_analyser() -> None:
+    """Compat shim -- no global face analyser exists anymore."""
+    from roop.face_detector import release_yolo_detector
+    release_yolo_detector()
 
 
 def extract_face_images(source_filename, video_info, extra_padding=-1.0):
@@ -153,7 +107,6 @@ def extract_face_images(source_filename, video_info, extra_padding=-1.0):
                     startX, endX, startY, endY, source_image
                 )
                 cutout_padding = extra_padding
-                # top needs extra room for detection
                 padding = int((endY - startY) * cutout_padding)
                 oldY = startY
                 startY -= padding
@@ -218,7 +171,6 @@ def resize_image_keep_content(image, new_width=512, new_height=512):
         r = new_height / float(h)
         dim = (int(w * r), new_height)
     else:
-        # Calculate the ratio of the width and construct the dimensions
         r = new_width / float(w)
         dim = (new_width, int(h * r))
     image = cv2.resize(image, dim, interpolation=cv2.INTER_AREA)
@@ -298,7 +250,6 @@ def estimate_norm(lmk, image_size=112):
     return M
 
 
-# aligned, M = norm_crop2(f[1], face.kps, 512)
 def align_crop(img, landmark, image_size=112, mode="arcface"):
     M = estimate_norm(landmark, image_size)
     warped = cv2.warpAffine(img, M, (image_size, image_size), borderValue=0.0)
@@ -323,7 +274,6 @@ def square_crop(im, S):
 def transform(data, center, output_size, scale, rotation):
     scale_ratio = scale
     rot = float(rotation) * np.pi / 180.0
-    # translation = (output_size/2-center[0]*scale_ratio, output_size/2-center[1]*scale_ratio)
     t1 = trans.SimilarityTransform(scale=scale_ratio)
     cx = center[0] * scale_ratio
     cy = center[1] * scale_ratio
@@ -342,7 +292,6 @@ def trans_points2d(pts, M):
         pt = pts[i]
         new_pt = np.array([pt[0], pt[1], 1.0], dtype=np.float32)
         new_pt = np.dot(M, new_pt)
-        # print('new_pt', new_pt.shape, new_pt)
         new_pts[i] = new_pt[0:2]
 
     return new_pts
@@ -350,13 +299,11 @@ def trans_points2d(pts, M):
 
 def trans_points3d(pts, M):
     scale = np.sqrt(M[0][0] * M[0][0] + M[0][1] * M[0][1])
-    # print(scale)
     new_pts = np.zeros(shape=pts.shape, dtype=np.float32)
     for i in range(pts.shape[0]):
         pt = pts[i]
         new_pt = np.array([pt[0], pt[1], 1.0], dtype=np.float32)
         new_pt = np.dot(M, new_pt)
-        # print('new_pt', new_pt.shape, new_pt)
         new_pts[i][0:2] = new_pt[0:2]
         new_pts[i][2] = pts[i][2] * scale
 

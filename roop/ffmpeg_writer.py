@@ -17,7 +17,7 @@ import subprocess as sp
 import threading
 from collections import deque
 
-from roop.util_ffmpeg import is_nvenc_codec, resolve_codec, get_software_fallback
+from roop.util_ffmpeg import is_videotoolbox_codec, resolve_codec, get_software_fallback
 
 PIPE = -1
 STDOUT = -2
@@ -125,9 +125,9 @@ class FFMPEG_VideoWriter:
             cmd.extend(["-i", audiofile, "-acodec", "copy"])
 
         cmd.extend(["-vcodec", self.codec])
-        # Use -cq + preset for NVENC, -crf for software encoders
-        if is_nvenc_codec(self.codec):
-            cmd.extend(["-cq", str(crf), "-preset", "p4"])
+        # VideoToolbox uses -q:v (higher = better); software encoders use -crf
+        if is_videotoolbox_codec(self.codec):
+            cmd.extend(["-q:v", str(crf)])
         else:
             cmd.extend(["-crf", str(crf)])
         if ffmpeg_params is not None:
@@ -169,27 +169,26 @@ class FFMPEG_VideoWriter:
         try:
             self.proc = sp.Popen(cmd, **popen_params)
         except Exception as e:
-            if is_nvenc_codec(self.codec):
+            if is_videotoolbox_codec(self.codec):
                 fallback = get_software_fallback(self.codec)
-                print(f"NVENC encoder failed to start, falling back to {fallback}")
+                print(f"VideoToolbox encoder failed to start, falling back to {fallback}")
                 self.codec = fallback
-                # Replace codec and quality args in cmd
                 vcodec_idx = cmd.index("-vcodec", cmd.index("-i"))
                 cmd[vcodec_idx + 1] = fallback
-                if "-cq" in cmd:
-                    cq_idx = cmd.index("-cq")
-                    cq_val = cmd[cq_idx + 1]
-                    del cmd[cq_idx:cq_idx + 4]  # -cq val -preset p4
-                    cmd[cq_idx:cq_idx] = ["-crf", cq_val]
+                if "-q:v" in cmd:
+                    q_idx = cmd.index("-q:v")
+                    q_val = cmd[q_idx + 1]
+                    del cmd[q_idx:q_idx + 2]
+                    cmd[q_idx:q_idx] = ["-crf", q_val]
                 self.proc = sp.Popen(cmd, **popen_params)
             else:
                 raise IOError(f"Failed to start FFMPEG process: {e}")
 
-        # Drain stderr on a background thread. ffmpeg's stderr pipe is ~4KB
-        # on Windows; at 4K/hevc_nvenc it fills after a few hundred frames,
-        # which blocks ffmpeg's writer, stops it from reading stdin, and
-        # deadlocks the whole producer/consumer pipeline. The ring buffer
-        # keeps the last 200 lines for diagnostics.
+        # Drain stderr on a background thread. ffmpeg's stderr pipe is small;
+        # at high resolutions it fills after a few hundred frames, blocks the
+        # writer, stops it reading stdin, and deadlocks the whole
+        # producer/consumer pipeline. The ring buffer keeps the last 200
+        # lines for diagnostics.
         self._stderr_lines: deque = deque(maxlen=200)
         self._stderr_thread = None
         if self.proc.stderr is not None:
@@ -228,20 +227,15 @@ class FFMPEG_VideoWriter:
             )
 
             # Check for hardware encoder specific errors
-            if (b"Failed locking bitstream buffer" in ffmpeg_error or
-                b"hevc_nvenc" in ffmpeg_error or
-                b"h264_nvenc" in ffmpeg_error or
+            if (b"hevc_videotoolbox" in ffmpeg_error or
+                b"h264_videotoolbox" in ffmpeg_error or
+                b"VideoToolbox" in ffmpeg_error or
                 b"Error encoding a frame" in ffmpeg_error):
                 error = error + (
-                    "\n\nHardware encoder (NVENC) failed. This is usually due to:"
-                    "\n- GPU memory exhaustion"
-                    "\n- Too many concurrent encoding sessions"
-                    "\n- GPU driver issues"
-                    "\n\nConsider:"
+                    "\n\nHardware encoder (VideoToolbox) failed. Consider:"
                     "\n- Reducing video resolution or quality"
                     "\n- Using software encoding (libx264/libx265)"
                     "\n- Closing other GPU-intensive applications"
-                    "\n- Updating GPU drivers"
                 )
 
             elif b"Unknown encoder" in ffmpeg_error:

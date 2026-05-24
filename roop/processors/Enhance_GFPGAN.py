@@ -1,20 +1,14 @@
-import cv2
-import numpy as np
-import onnxruntime
-import roop.globals
+"""Enhance_GFPGAN -- MLX port pending.
 
-from roop.perf_profile import (
-    augment_providers,
-    get_enhancer_session_options,
-)
-from roop.typing import Face, Frame, FaceSet
-from roop.utilities import resolve_relative_path
+Upstream loaded ``GFPGANv1.4.onnx`` via ONNX Runtime and ran a single
+512x512 face restoration pass.  The pre/post processing
+(BGR->RGB, normalize to [-1,1], CHW transpose) is pure NumPy/OpenCV
+and will be reused once the model is wired to MLX.
+"""
 
 
 class Enhance_GFPGAN:
     plugin_options: dict = None
-
-    model_gfpgan = None
     name = None
     devicename = None
 
@@ -22,53 +16,14 @@ class Enhance_GFPGAN:
     type = "enhance"
 
     def Initialize(self, plugin_options: dict):
-        if self.plugin_options is not None:
-            if self.plugin_options["devicename"] != plugin_options["devicename"]:
-                self.Release()
+        raise NotImplementedError(
+            "Enhance_GFPGAN has not been ported to MLX yet."
+        )
 
-        self.plugin_options = plugin_options
-        if self.model_gfpgan is None:
-            model_path = resolve_relative_path("../models/GFPGANv1.4.onnx")
-
-            sess_options = get_enhancer_session_options()
-            providers = augment_providers(roop.globals.execution_providers)
-            self.model_gfpgan = onnxruntime.InferenceSession(
-                model_path, sess_options, providers=providers
-            )
-            # replace Mac mps with cpu for the moment
-            self.devicename = self.plugin_options["devicename"].replace("mps", "cpu")
-            self.device_id = int(self.plugin_options.get("device_id", 0))
-
-        self.name = self.model_gfpgan.get_inputs()[0].name
-
-    def Run(
-        self, source_faceset: FaceSet, target_face: Face, temp_frame: Frame
-    ) -> Frame:
-        # preprocess
-        input_size = temp_frame.shape[1]
-        temp_frame = cv2.resize(temp_frame, (512, 512), cv2.INTER_CUBIC)
-
-        temp_frame = cv2.cvtColor(temp_frame, cv2.COLOR_BGR2RGB)
-        temp_frame = temp_frame.astype("float32") / 255.0
-        temp_frame = (temp_frame - 0.5) / 0.5
-        temp_frame = np.expand_dims(temp_frame, axis=0).transpose(0, 3, 1, 2)
-
-        io_binding = self.model_gfpgan.io_binding()
-        io_binding.bind_cpu_input("input", temp_frame)
-        io_binding.bind_output("1288", self.devicename, self.device_id)
-        self.model_gfpgan.run_with_iobinding(io_binding)
-        ort_outs = io_binding.copy_outputs_to_cpu()
-        result = ort_outs[0][0]
-
-        # post-process
-        result = np.clip(result, -1, 1)
-        result = (result + 1) / 2
-        result = result.transpose(1, 2, 0) * 255.0
-        result = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
-        scale_factor = int(result.shape[1] / input_size)
-        return result.astype(np.uint8), scale_factor
+    def Run(self, source_faceset, target_face, temp_frame):
+        raise NotImplementedError(
+            "Enhance_GFPGAN has not been ported to MLX yet."
+        )
 
     def Release(self):
-        if self.model_gfpgan is not None:
-            del self.model_gfpgan
-            self.model_gfpgan = None
+        return None

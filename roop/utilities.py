@@ -7,17 +7,14 @@ import ssl
 import subprocess
 import sys
 import urllib
-import torch
 import gradio
 import tempfile
 import cv2
 import zipfile
 import traceback
-import threading
 import random
 
-from typing import Union, Any
-from contextlib import nullcontext
+from typing import Any
 
 from pathlib import Path
 from typing import List
@@ -31,9 +28,6 @@ import roop.globals
 
 TEMP_FILE = "temp.mp4"
 TEMP_DIRECTORY = "temp"
-
-THREAD_SEMAPHORE = threading.Semaphore()
-NULL_CONTEXT = nullcontext()
 
 
 # monkey patch ssl for mac
@@ -272,17 +266,13 @@ def resolve_relative_path(path: str) -> str:
 
 
 def get_device() -> str:
-    if len(roop.globals.execution_providers) < 1:
-        roop.globals.execution_providers = ["CPUExecutionProvider"]
+    """Return the active compute device name.
 
-    prov = roop.globals.execution_providers[0]
-    if "CoreMLExecutionProvider" in prov:
-        return "mps"
-    if "CUDAExecutionProvider" in prov or "ROCMExecutionProvider" in prov:
-        return "cuda"
-    if "OpenVINOExecutionProvider" in prov:
-        return "mkl"
-    return "cpu"
+    On Apple Silicon (where MLX is supported) we always return ``"mlx"`` so
+    callers can branch off it. PyTorch consumers should treat this as the
+    MPS device.
+    """
+    return "mlx"
 
 
 def str_to_class(module_name, class_name) -> Any:
@@ -379,10 +369,15 @@ def open_folder(path: str):
 
 def create_version_html() -> str:
     python_version = ".".join([str(x) for x in sys.version_info[0:3]])
+    try:
+        import mlx.core as mx
+        mlx_version = mx.__version__
+    except Exception:
+        mlx_version = "not installed"
     versions_html = f"""
 python: <span title="{sys.version}">{python_version}</span>
 •
-torch: {getattr(torch, "__long_version__", torch.__version__)}
+mlx: {mlx_version}
 •
 gradio: {gradio.__version__}
 """
@@ -391,28 +386,6 @@ gradio: {gradio.__version__}
 
 def compute_cosine_distance(emb1, emb2) -> float:
     return distance.cosine(emb1, emb2)
-
-
-def has_cuda_device():
-    return torch.cuda is not None and torch.cuda.is_available()
-
-
-def get_cuda_device_list() -> list[str]:
-    if not has_cuda_device():
-        return []
-    return [
-        f"{i}: {torch.cuda.get_device_name(i)}"
-        for i in range(torch.cuda.device_count())
-    ]
-
-
-def print_cuda_info():
-    try:
-        print(
-            f"Number of CUDA devices: {torch.cuda.device_count()} Currently used Id: {torch.cuda.current_device()} Device Name: {torch.cuda.get_device_name(torch.cuda.current_device())}"
-        )
-    except:
-        print("No CUDA device found!")
 
 
 def clean_dir(path: str):
@@ -426,15 +399,6 @@ def clean_dir(path: str):
                 shutil.rmtree(item_path)
         except Exception as e:
             print(e)
-
-
-def conditional_thread_semaphore() -> Union[Any, Any]:
-    if (
-        "DmlExecutionProvider" in roop.globals.execution_providers
-        or "ROCMExecutionProvider" in roop.globals.execution_providers
-    ):
-        return THREAD_SEMAPHORE
-    return NULL_CONTEXT
 
 
 def shuffle_array(arr):

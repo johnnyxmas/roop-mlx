@@ -4,16 +4,9 @@ import os
 import sys
 import shutil
 
-# single thread doubles cuda performance - needs to be set before torch import
-if any(arg.startswith("--execution-provider") for arg in sys.argv):
-    os.environ["OMP_NUM_THREADS"] = "1"
-
 import warnings
-from typing import List
 import platform
 import signal
-import torch
-import onnxruntime
 import pathlib
 import argparse
 
@@ -38,9 +31,6 @@ call_display_ui = None
 process_mgr = None
 
 
-if "ROCMExecutionProvider" in roop.globals.execution_providers:
-    del torch
-
 warnings.filterwarnings("ignore", category=FutureWarning, module="insightface")
 warnings.filterwarnings("ignore", category=UserWarning, module="torchvision")
 
@@ -59,91 +49,29 @@ def parse_args() -> None:
         action="store_true",
         default=False,
     )
-    program.add_argument(
-        "--cuda_device_id",
-        help="Index of the cuda gpu to use",
-        dest="cuda_device_id",
-        type=int,
-        default=0,
-    )
     roop.globals.startup_args = program.parse_args()
     # Always enable all processors when using GUI
     roop.globals.frame_processors = ["face_swapper", "face_enhancer"]
 
 
-def encode_execution_providers(execution_providers: List[str]) -> List[str]:
-    return [
-        execution_provider.replace("ExecutionProvider", "").lower()
-        for execution_provider in execution_providers
-    ]
-
-
-def decode_execution_providers(execution_providers: List[str]) -> List[str]:
-    list_providers = [
-        provider
-        for provider, encoded_execution_provider in zip(
-            onnxruntime.get_available_providers(),
-            encode_execution_providers(onnxruntime.get_available_providers()),
-        )
-        if any(
-            execution_provider in encoded_execution_provider
-            for execution_provider in execution_providers
-        )
-    ]
-
-    try:
-        for i in range(len(list_providers)):
-            if list_providers[i] == "CUDAExecutionProvider":
-                list_providers[i] = (
-                    "CUDAExecutionProvider",
-                    {
-                        "device_id": roop.globals.cuda_device_id,
-                        "arena_extend_strategy": "kSameAsRequested",
-                    },
-                )
-                torch.cuda.set_device(roop.globals.cuda_device_id)
-                break
-    except:
-        pass
-
-    return list_providers
-
-
 def suggest_max_memory() -> int:
-    if platform.system().lower() == "darwin":
-        return 4
-    return 16
-
-
-def suggest_execution_providers() -> List[str]:
-    return encode_execution_providers(onnxruntime.get_available_providers())
-
-
-def suggest_execution_threads() -> int:
-    if "DmlExecutionProvider" in roop.globals.execution_providers:
-        return 1
-    if "ROCMExecutionProvider" in roop.globals.execution_providers:
-        return 1
+    # Apple Silicon ships with unified memory; 8 GB is a reasonable cap
+    # for the swap pipeline before the OS starts swapping aggressively.
     return 8
 
 
+def suggest_execution_threads() -> int:
+    return 4
+
+
 def limit_resources() -> None:
-    # limit memory usage
     if roop.globals.max_memory:
         memory = roop.globals.max_memory * 1024**3
         if platform.system().lower() == "darwin":
             memory = roop.globals.max_memory * 1024**6
-        if platform.system().lower() == "windows":
-            import ctypes
+        import resource
 
-            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-            kernel32.SetProcessWorkingSetSize(
-                -1, ctypes.c_size_t(memory), ctypes.c_size_t(memory)
-            )
-        else:
-            import resource
-
-            resource.setrlimit(resource.RLIMIT_DATA, (memory, memory))
+        resource.setrlimit(resource.RLIMIT_DATA, (memory, memory))
 
 
 def release_resources() -> None:
@@ -155,19 +83,7 @@ def release_resources() -> None:
         process_mgr.release_resources()
         process_mgr = None
 
-    # Force garbage collection
     gc.collect()
-    
-    # Clear GPU memory if available
-    if (
-        "CUDAExecutionProvider" in roop.globals.execution_providers
-        and torch.cuda.is_available()
-    ):
-        with torch.cuda.device("cuda"):
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
-            # Additional GPU memory cleanup
-            torch.cuda.synchronize()
 
 
 def pre_check() -> bool:
@@ -177,15 +93,10 @@ def pre_check() -> bool:
         )
         return False
 
-    # Download ALL models via the central model registry
-    from roop.model_manager import download_all_models, convert_models_to_fp16
+    from roop.model_manager import download_all_models
 
     update_status("Checking / downloading models...")
     download_all_models()
-
-    # Convert eligible ONNX models to FP16 for faster inference
-    update_status("Preparing FP16 model variants...")
-    convert_models_to_fp16()
 
     if not shutil.which("ffmpeg"):
         update_status("ffmpeg is not installed.")
@@ -237,8 +148,6 @@ def live_swap(frame, options):
     if process_mgr is None:
         process_mgr = ProcessMgr(None)
 
-    #    if len(roop.globals.INPUT_FACESETS) <= selected_index:
-    #        selected_index = 0
     process_mgr.initialize(
         roop.globals.INPUT_FACESETS, roop.globals.TARGET_FACES, options
     )
@@ -263,7 +172,6 @@ def batch_process_regular(
 ) -> None:
     global process_mgr
 
-    # Only limit resources, don't release them before processing
     limit_resources()
     if process_mgr is None:
         process_mgr = ProcessMgr(progress)
@@ -294,7 +202,6 @@ def batch_process_regular(
 def batch_process_with_options(files: list[ProcessEntry], options, progress):
     global process_mgr
 
-    # Only limit resources, don't release them before processing
     limit_resources()
     if process_mgr is None:
         process_mgr = ProcessMgr(progress)
@@ -310,7 +217,6 @@ def batch_process_with_options(files: list[ProcessEntry], options, progress):
 def batch_process(output_method, files: list[ProcessEntry], use_new_method) -> None:
     roop.globals.processing = True
 
-    # limit threads for some providers
     max_threads = suggest_execution_threads()
     if max_threads == 1:
         roop.globals.execution_threads = 1
@@ -469,46 +375,20 @@ def batch_process(output_method, files: list[ProcessEntry], use_new_method) -> N
 def end_processing(msg: str):
     update_status(msg)
     roop.globals.target_folder_path = None
-    
-    # No automatic temp folder cleanup - only do basic GPU cleanup
-    # Temp folders will only be cleaned on explicit user action (Ctrl+C or cleanup button)
-    basic_gpu_cleanup()
 
-
-def basic_gpu_cleanup():
-    """Basic GPU memory cleanup without releasing process manager"""
     import gc
-    
-    # Force garbage collection
     gc.collect()
-    
-    # Clear GPU memory if available
-    if (
-        "CUDAExecutionProvider" in roop.globals.execution_providers
-        and torch.cuda.is_available()
-    ):
-        try:
-            with torch.cuda.device("cuda"):
-                torch.cuda.empty_cache()
-                torch.cuda.synchronize()
-                # Additional GPU memory cleanup
-                torch.cuda.ipc_collect()
-        except Exception as e:
-            print(f"Warning: Could not perform GPU cleanup: {e}")
 
 
 def cleanup_temp_folders_only():
     """Clean up only temporary folders without releasing face analyzer (for stopped jobs)"""
     import tempfile
     import shutil
-    from roop import utilities as util
 
     try:
-        # Clean up temp folder used for frame extraction
         if roop.globals.target_path:
             util.clean_temp(roop.globals.target_path)
 
-        # Clean up batch processing temp folder
         tempfolder = os.path.join(tempfile.gettempdir(), "rooptmp")
         if os.path.exists(tempfolder):
             try:
@@ -516,31 +396,25 @@ def cleanup_temp_folders_only():
                 update_status("Cleaned batch processing temp folder")
             except Exception as e:
                 print(f"Warning: Could not clean batch processing temp folder: {e}")
-        
-        # Clean up application temp folder if not using OS temp - but avoid Gradio files
+
         if not roop.globals.CFG.use_os_temp_folder:
             app_temp_dir = os.path.abspath(os.path.join(os.getcwd(), "temp"))
             if os.path.exists(app_temp_dir):
                 cleaned_count = 0
                 total_count = 0
-                
-                # Only clean contents, not the folder itself, and avoid Gradio temp files
+
                 for item in os.listdir(app_temp_dir):
                     item_path = os.path.join(app_temp_dir, item)
                     total_count += 1
-                    
-                    # Skip Gradio temp files (they have long hex names and contain background.png, etc.)
+
                     if os.path.isdir(item_path):
-                        # Check if this looks like a Gradio temp directory
                         try:
                             dir_contents = os.listdir(item_path)
-                            # Skip directories that contain Gradio UI files
                             if any(fname in ['background.png', 'composite.png', 'layers.json'] for fname in dir_contents):
                                 continue
                         except (OSError, PermissionError):
-                            # If we can't read the directory, skip it to be safe
                             continue
-                    
+
                     try:
                         if os.path.isdir(item_path):
                             shutil.rmtree(item_path)
@@ -548,10 +422,8 @@ def cleanup_temp_folders_only():
                             os.remove(item_path)
                         cleaned_count += 1
                     except PermissionError:
-                        # File is in use, skip it to avoid corrupting active UI files
                         pass
                     except Exception:
-                        # Other errors, skip silently
                         pass
 
                 if cleaned_count > 0:
@@ -565,43 +437,34 @@ def cleanup_cache_folders():
     """Clean up temporary and cache folders after job completion"""
     import tempfile
     import shutil
-    from roop import utilities as util
-    
+
     try:
-        # Clean up temp folder used for frame extraction
         if roop.globals.target_path:
             util.clean_temp(roop.globals.target_path)
-        
-        # Clean up batch processing temp folder
+
         tempfolder = os.path.join(tempfile.gettempdir(), "rooptmp")
         if os.path.exists(tempfolder):
             shutil.rmtree(tempfolder)
             update_status("Cleaned batch processing temp folder")
-        
-        # Clean up application temp folder if not using OS temp - but avoid Gradio files
+
         if not roop.globals.CFG.use_os_temp_folder:
             app_temp_dir = os.path.abspath(os.path.join(os.getcwd(), "temp"))
             if os.path.exists(app_temp_dir):
                 cleaned_count = 0
                 total_count = 0
-                
-                # Only clean contents, not the folder itself, and avoid Gradio temp files
+
                 for item in os.listdir(app_temp_dir):
                     item_path = os.path.join(app_temp_dir, item)
                     total_count += 1
-                    
-                    # Skip Gradio temp files (they have long hex names and contain background.png, etc.)
+
                     if os.path.isdir(item_path):
-                        # Check if this looks like a Gradio temp directory
                         try:
                             dir_contents = os.listdir(item_path)
-                            # Skip directories that contain Gradio UI files
                             if any(fname in ['background.png', 'composite.png', 'layers.json'] for fname in dir_contents):
                                 continue
                         except (OSError, PermissionError):
-                            # If we can't read the directory, skip it to be safe
                             continue
-                    
+
                     try:
                         if os.path.isdir(item_path):
                             shutil.rmtree(item_path)
@@ -609,20 +472,16 @@ def cleanup_cache_folders():
                             os.remove(item_path)
                         cleaned_count += 1
                     except PermissionError:
-                        # File is in use, skip it to avoid corrupting active UI files
                         pass
                     except Exception:
-                        # Other errors, skip silently
                         pass
 
                 if cleaned_count > 0:
                     update_status(f"Cleaned {cleaned_count}/{total_count} temp files (preserved UI files)")
 
-        # Clean up CLIP cache if it exists
         clip_cache_dir = os.path.expanduser("~/.cache/clip")
         if os.path.exists(clip_cache_dir):
             try:
-                # Only clean if cache is larger than 1GB
                 cache_size = sum(os.path.getsize(os.path.join(dirpath, filename))
                                for dirpath, dirnames, filenames in os.walk(clip_cache_dir)
                                for filename in filenames) / (1024**3)
@@ -631,11 +490,9 @@ def cleanup_cache_folders():
                     update_status(f"Cleaned CLIP cache ({cache_size:.1f}GB)")
             except Exception as e:
                 print(f"Warning: Could not clean CLIP cache: {e}")
-        
-        # Don't release face analyzer after successful completion to allow subsequent swaps
-        # Only release it when explicitly shutting down the application
+
         update_status("Cleaned temporary files (keeping models loaded for next swap)")
-                
+
     except Exception as e:
         print(f"Warning: Error during cache cleanup: {e}")
 
@@ -643,11 +500,8 @@ def cleanup_cache_folders():
 def destroy() -> None:
     """Called on Ctrl+C or script termination - do full cleanup"""
     update_status("Shutting down - cleaning up temp files...")
-    
-    # Do full temp folder cleanup on shutdown
+
     cleanup_cache_folders()
-    
-    # Release all resources
     release_resources()
     sys.exit()
 
@@ -657,10 +511,6 @@ def run() -> None:
     if not pre_check():
         return
     roop.globals.CFG = Settings("config.yaml")
-    if roop.globals.startup_args.cuda_device_id != 0:
-        roop.globals.CFG.cuda_device_id = roop.globals.startup_args.cuda_device_id
-    roop.globals.cuda_device_id = roop.globals.CFG.cuda_device_id
-    roop.globals.multi_gpu = roop.globals.CFG.multi_gpu
     roop.globals.execution_threads = roop.globals.CFG.max_threads
     roop.globals.video_encoder = roop.globals.CFG.output_video_codec
     roop.globals.video_quality = roop.globals.CFG.video_quality

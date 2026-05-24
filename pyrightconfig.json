@@ -51,5 +51,5 @@
     "reportUnboundVariable": false,
     "reportUndefinedVariable": false,
     "pythonVersion": "3.11",
-    "pythonPlatform": "Windows"
+    "pythonPlatform": "Darwin"
 }

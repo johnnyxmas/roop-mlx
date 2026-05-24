@@ -1,6 +1,6 @@
 from typing import Any
 
-from insightface.app.common import Face
+from roop.face_detector import FaceCompat as Face
 from roop.FaceSet import FaceSet
 import numpy
 

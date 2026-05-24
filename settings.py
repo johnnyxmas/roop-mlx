@@ -34,21 +34,12 @@ class Settings:
         self.clear_output = self.default_get(data, "clear_output", True)
         self.max_threads = self.default_get(data, "max_threads", 2)
         self.memory_limit = self.default_get(data, "memory_limit", 0)
-        self.provider = self.default_get(data, "provider", "cuda")
-        self.force_cpu = self.default_get(data, "force_cpu", False)
         self.output_template = self.default_get(
             data, "output_template", "{file}_{time}"
         )
         self.use_os_temp_folder = self.default_get(data, "use_os_temp_folder", False)
         self.output_show_video = self.default_get(data, "output_show_video", True)
         self.launch_browser = self.default_get(data, "launch_browser", True)
-        self.cuda_device_id = self.default_get(data, "cuda_device_id", 0)
-        self.multi_gpu = self.default_get(data, "multi_gpu", False)
-        self.performance_profile = self.default_get(
-            data, "performance_profile", "memory_saver"
-        )
-        self.detector_stride = self.default_get(data, "detector_stride", 3)
-        self.use_gpu_decode = self.default_get(data, "use_gpu_decode", True)
 
     def save(self):
         data = {
@@ -63,16 +54,9 @@ class Settings:
             "clear_output": self.clear_output,
             "max_threads": self.max_threads,
             "memory_limit": self.memory_limit,
-            "provider": self.provider,
-            "force_cpu": self.force_cpu,
             "output_template": self.output_template,
             "use_os_temp_folder": self.use_os_temp_folder,
             "output_show_video": self.output_show_video,
-            "cuda_device_id": self.cuda_device_id,
-            "multi_gpu": self.multi_gpu,
-            "performance_profile": self.performance_profile,
-            "detector_stride": self.detector_stride,
-            "use_gpu_decode": self.use_gpu_decode,
         }
         with open(self.config_file, "w") as f:
             yaml.dump(data, f)

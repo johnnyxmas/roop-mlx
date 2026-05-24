@@ -64,7 +64,7 @@ def prepare_environment():
 
 
 def run():
-    from roop.core import decode_execution_providers, set_display_ui
+    from roop.core import set_display_ui
 
     prepare_environment()
 
@@ -83,17 +83,8 @@ def run():
     """
 
     while run_server:
-        if roop.globals.CFG.provider == "cuda" and util.has_cuda_device() == False:
-            roop.globals.CFG.provider = "cpu"
-        roop.globals.cuda_device_id = roop.globals.CFG.cuda_device_id
-        roop.globals.multi_gpu = roop.globals.CFG.multi_gpu
-        roop.globals.execution_providers = decode_execution_providers(
-            [roop.globals.CFG.provider]
-        )
         gputype = util.get_device()
-        if gputype == "cuda":
-            util.print_cuda_info()
-        print(f"Using provider {roop.globals.execution_providers} - Device:{gputype}")
+        print(f"Using device: {gputype}")
 
         server_name = roop.globals.CFG.server_name
         if server_name is None or len(server_name) < 1:
