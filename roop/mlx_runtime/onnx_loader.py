@@ -183,6 +183,23 @@ class OnnxMLXSession:
             "Expand":             self._op_expand,
             "Gather":             self._op_gather,
             "Softmax":            self._op_softmax,
+            "Reciprocal":         self._op_reciprocal,
+            "Max":                self._op_max,
+            "Min":                self._op_min,
+            "ConvTranspose":      self._op_conv_transpose,
+            "Pow":                self._op_pow,
+            "ReduceSum":          self._op_reducesum,
+            "ReduceMax":          self._op_reducemax,
+            "ConstantOfShape":    self._op_constant_of_shape,
+            "Tile":               self._op_tile,
+            "Identity":           self._op_identity,
+            "Abs":                self._op_abs,
+            "Sign":               self._op_sign,
+            "Round":              self._op_round,
+            "Less":               self._op_less,
+            "Where":              self._op_where,
+            "Neg":                self._op_neg,
+            "Equal":              self._op_equal,
         }
 
     # -- public interface (mirrors onnxruntime.InferenceSession) -----------
@@ -661,9 +678,12 @@ class OnnxMLXSession:
         values[node.output[0]] = mx.transpose(x, perm)
 
     def _op_expand(self, node, values):
-        x     = self._v(values, node.input[0])
-        shape = [int(s) for s in np.array(self._v(values, node.input[1]))]
-        values[node.output[0]] = mx.broadcast_to(x, shape)
+        x          = self._v(values, node.input[0])
+        shape_hint = [int(s) for s in np.array(self._v(values, node.input[1]))]
+        # ONNX Expand uses numpy broadcast rules: compute the true output shape
+        # from both the input shape and the hint, then broadcast to it.
+        out_shape = list(np.broadcast_shapes(x.shape, shape_hint))
+        values[node.output[0]] = mx.broadcast_to(x, out_shape)
 
     def _op_gather(self, node, values):
         x       = self._v(values, node.input[0])
@@ -694,3 +714,139 @@ class OnnxMLXSession:
         x    = self._v(values, node.input[0])
         axis = _attr(node, "axis", -1)
         values[node.output[0]] = mx.softmax(x, axis=axis)
+
+    def _op_reciprocal(self, node, values):
+        x = self._v(values, node.input[0])
+        values[node.output[0]] = mx.reciprocal(x)
+
+    def _op_max(self, node, values):
+        result = self._v(values, node.input[0])
+        for name in node.input[1:]:
+            result = mx.maximum(result, self._v(values, name))
+        values[node.output[0]] = result
+
+    def _op_min(self, node, values):
+        result = self._v(values, node.input[0])
+        for name in node.input[1:]:
+            result = mx.minimum(result, self._v(values, name))
+        values[node.output[0]] = result
+
+    def _op_conv_transpose(self, node, values):
+        x = self._v(values, node.input[0])
+        w = self._v(values, node.input[1])
+        b = self._v(values, node.input[2]) if len(node.input) > 2 and node.input[2] else None
+
+        strides   = _attr(node, "strides",          [1, 1])
+        pads      = _attr(node, "pads",              [0, 0, 0, 0])
+        groups    = _attr(node, "group",             1)
+        out_pads  = _attr(node, "output_padding",    [0, 0])
+
+        # ONNX ConvTranspose pads = output crop amounts: [h_beg, w_beg, h_end, w_end]
+        # Run with no padding then crop manually to support asymmetric pads.
+        # ONNX ConvTranspose weight: (C_in, C_out/g, kH, kW) → MLX (C_out, kH, kW, C_in/g)
+        w_mlx = mx.transpose(w, [1, 2, 3, 0])
+
+        x_nhwc = self._to_nhwc(x)
+        out = mx.conv_transpose2d(
+            x_nhwc, w_mlx,
+            stride=strides,
+            padding=0,          # we handle cropping ourselves
+            output_padding=out_pads,
+            groups=groups,
+        )
+        if b is not None:
+            out = out + b.reshape(1, 1, 1, -1)
+
+        out = self._to_nchw(out)  # [N, C, H, W]
+
+        # Crop output per ONNX pads [h_beg, w_beg, h_end, w_end]
+        if any(pads):
+            h_b, w_b, h_e, w_e = pads
+            H, W = out.shape[2], out.shape[3]
+            h_end = H - h_e if h_e else H
+            w_end = W - w_e if w_e else W
+            out = out[:, :, h_b:h_end, w_b:w_end]
+
+        values[node.output[0]] = out
+
+    def _op_pow(self, node, values):
+        x = self._v(values, node.input[0])
+        y = self._v(values, node.input[1])
+        values[node.output[0]] = mx.power(x, y)
+
+    def _op_reducesum(self, node, values):
+        x        = self._v(values, node.input[0])
+        keepdims = bool(_attr(node, "keepdims", 1))
+        if len(node.input) > 1 and node.input[1]:
+            axes_arr = self._v(values, node.input[1])
+            axes = [int(a) for a in np.array(axes_arr)]
+        else:
+            axes = _attr(node, "axes", None)
+        if axes is not None and len(axes) == 0:
+            axes = None
+        values[node.output[0]] = mx.sum(x, axis=axes, keepdims=keepdims)
+
+    def _op_reducemax(self, node, values):
+        x        = self._v(values, node.input[0])
+        keepdims = bool(_attr(node, "keepdims", 1))
+        if len(node.input) > 1 and node.input[1]:
+            axes_arr = self._v(values, node.input[1])
+            axes = [int(a) for a in np.array(axes_arr)]
+        else:
+            axes = _attr(node, "axes", None)
+        values[node.output[0]] = mx.max(x, axis=axes, keepdims=keepdims)
+
+    def _op_constant_of_shape(self, node, values):
+        shape_arr = self._v(values, node.input[0])
+        shape = [int(s) for s in np.array(shape_arr)]
+        val_attr = _attr(node, "value", None)
+        if val_attr is not None:
+            fill_val = float(val_attr.flat[0])
+            dtype = _ONNX_TO_MLX_DTYPE.get(
+                TensorProto.FLOAT, mx.float32
+            )
+        else:
+            fill_val = 0.0
+            dtype = mx.float32
+        values[node.output[0]] = mx.full(shape, fill_val, dtype=dtype)
+
+    def _op_tile(self, node, values):
+        x       = self._v(values, node.input[0])
+        repeats = [int(r) for r in np.array(self._v(values, node.input[1]))]
+        result  = x
+        for axis, rep in enumerate(repeats):
+            if rep != 1:
+                result = mx.concatenate([result] * rep, axis=axis)
+        values[node.output[0]] = result
+
+    def _op_identity(self, node, values):
+        values[node.output[0]] = self._v(values, node.input[0])
+
+    def _op_abs(self, node, values):
+        values[node.output[0]] = mx.abs(self._v(values, node.input[0]))
+
+    def _op_sign(self, node, values):
+        x = self._v(values, node.input[0])
+        values[node.output[0]] = mx.sign(x)
+
+    def _op_round(self, node, values):
+        values[node.output[0]] = mx.round(self._v(values, node.input[0]))
+
+    def _op_neg(self, node, values):
+        values[node.output[0]] = -self._v(values, node.input[0])
+
+    def _op_less(self, node, values):
+        a = self._v(values, node.input[0])
+        b = self._v(values, node.input[1])
+        values[node.output[0]] = (a < b)
+
+    def _op_equal(self, node, values):
+        a = self._v(values, node.input[0])
+        b = self._v(values, node.input[1])
+        values[node.output[0]] = mx.equal(a, b)
+
+    def _op_where(self, node, values):
+        cond = self._v(values, node.input[0])
+        x    = self._v(values, node.input[1])
+        y    = self._v(values, node.input[2])
+        values[node.output[0]] = mx.where(cond, x, y)
