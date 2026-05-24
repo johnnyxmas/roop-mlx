@@ -227,6 +227,8 @@ class OnnxMLXSession:
             "LessOrEqual":        self._op_less_equal,
             "Greater":            self._op_greater,
             "HardSigmoid":        self._op_hard_sigmoid,
+            "DepthToSpace":       self._op_depth_to_space,
+            "ReduceL2":           self._op_reduce_l2,
         }
 
     # -- public interface (mirrors onnxruntime.InferenceSession) -----------
@@ -288,16 +290,40 @@ class OnnxMLXSession:
         w = self._v(values, node.input[1])
         b = self._v(values, node.input[2]) if len(node.input) > 2 and node.input[2] else None
 
-        strides   = _attr(node, "strides",   [1, 1])
-        pads      = _attr(node, "pads",      [0, 0, 0, 0])
-        dilations = _attr(node, "dilations", [1, 1])
+        strides   = list(_attr(node, "strides",   [1, 1]))
+        pads      = list(_attr(node, "pads",      [0, 0, 0, 0]))
+        dilations = list(_attr(node, "dilations", [1, 1]))
         groups    = _attr(node, "group",     1)
         auto_pad  = _attr(node, "auto_pad",  b"NOTSET")
+
+        if x.ndim == 3:
+            # 1-D convolution: input [N, C, L] → MLX needs [N, L, C]
+            pads_1d = pads[:2] if len(pads) >= 2 else [0, 0]
+            if pads_1d[0] != (pads_1d[1] if len(pads_1d) > 1 else 0):
+                x = mx.pad(x, [(0,0),(0,0),(pads_1d[0], pads_1d[1] if len(pads_1d) > 1 else 0)])
+                pad1d = 0
+            elif auto_pad in (b"SAME_UPPER", b"SAME_LOWER"):
+                pad1d = "same"
+            else:
+                pad1d = pads_1d[0]
+            x_nlc = mx.transpose(x, [0, 2, 1])
+            w_okc = mx.transpose(w, [0, 2, 1])
+            out = mx.conv1d(x_nlc, w_okc, stride=strides[0], padding=pad1d,
+                            dilation=dilations[0], groups=groups)
+            if b is not None:
+                out = out + b.reshape(1, 1, -1)
+            values[node.output[0]] = mx.transpose(out, [0, 2, 1])
+            return
+
+        # 2-D convolution
+        # ONNX pads: [top, left, bottom, right]; extend if short
+        while len(pads) < 4:
+            pads.append(0)
 
         # asymmetric padding not directly supported in mx.conv2d;
         # use explicit mx.pad if needed
         if pads[0] != pads[2] or pads[1] != pads[3]:
-            # pad H first then W: pads = [h_start, w_start, h_end, w_end]
+            # pads = [h_start, w_start, h_end, w_end]
             x = mx.pad(x, [(0,0),(0,0),(pads[0],pads[2]),(pads[1],pads[3])])
             padding = 0
         elif auto_pad in (b"SAME_UPPER", b"SAME_LOWER"):
@@ -1047,3 +1073,28 @@ class OnnxMLXSession:
         alpha = _attr(node, "alpha", 0.2)
         beta  = _attr(node, "beta",  0.5)
         values[node.output[0]] = mx.clip(alpha * x + beta, 0.0, 1.0)
+
+    def _op_depth_to_space(self, node, values):
+        x         = self._v(values, node.input[0])   # [N, C, H, W]
+        blocksize = _attr(node, "blocksize", 2)
+        mode      = _attr(node, "mode", b"DCR")
+        if isinstance(mode, bytes):
+            mode = mode.decode()
+        N, C, H, W = x.shape
+        c_out = C // (blocksize * blocksize)
+        if mode == "CRD":
+            x = mx.reshape(x, (N, c_out, blocksize, blocksize, H, W))
+            x = mx.transpose(x, (0, 1, 4, 2, 5, 3))
+        else:  # DCR
+            x = mx.reshape(x, (N, blocksize, blocksize, c_out, H, W))
+            x = mx.transpose(x, (0, 3, 4, 1, 5, 2))
+        values[node.output[0]] = mx.reshape(x, (N, c_out, H * blocksize, W * blocksize))
+
+    def _op_reduce_l2(self, node, values):
+        x        = self._v(values, node.input[0])
+        keepdims = bool(_attr(node, "keepdims", 1))
+        if len(node.input) > 1 and node.input[1]:
+            axes = [int(a) for a in np.array(self._v(values, node.input[1]))]
+        else:
+            axes = _attr(node, "axes", None)
+        values[node.output[0]] = mx.sqrt(mx.sum(x * x, axis=axes, keepdims=keepdims))
