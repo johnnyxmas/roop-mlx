@@ -53,9 +53,14 @@ _ONNX_TO_NP_DTYPE = {
 
 
 def _np_to_mx(arr: np.ndarray) -> mx.array:
-    """Convert numpy array to MLX, downcasting int64 → int32."""
+    """Convert numpy array to MLX, downcasting int64 → int32.
+
+    Large int64 sentinel values (INT64_MIN/MAX) used by ONNX Slice are
+    clipped into int32 range so they remain detectable as sentinels
+    (abs value >= 2**30) rather than wrapping to small values like 0 or 1.
+    """
     if arr.dtype == np.int64:
-        arr = arr.astype(np.int32)
+        arr = arr.clip(-(2**31), 2**31 - 1).astype(np.int32)
     if arr.dtype == np.float64:
         arr = arr.astype(np.float32)
     return mx.array(arr)
@@ -200,6 +205,28 @@ class OnnxMLXSession:
             "Where":              self._op_where,
             "Neg":                self._op_neg,
             "Equal":              self._op_equal,
+            "Erf":                self._op_erf,
+            "Exp":                self._op_exp,
+            "Log":                self._op_log,
+            "InstanceNormalization": self._op_instance_norm,
+            "ReduceProd":         self._op_reduceprod,
+            "ScatterElements":    self._op_scatter_elements,
+            "TopK":               self._op_topk,
+            "ArgMin":             self._op_argmin,
+            "ArgMax":             self._op_argmax,
+            "CumSum":             self._op_cumsum,
+            "NonZero":            self._op_nonzero,
+            "ScatterND":          self._op_scatter_nd,
+            "GatherND":           self._op_gather_nd,
+            "GatherElements":     self._op_gather_elements,
+            "Einsum":             self._op_einsum,
+            "Not":                self._op_not,
+            "And":                self._op_and,
+            "Or":                 self._op_or,
+            "GreaterOrEqual":     self._op_greater_equal,
+            "LessOrEqual":        self._op_less_equal,
+            "Greater":            self._op_greater,
+            "HardSigmoid":        self._op_hard_sigmoid,
         }
 
     # -- public interface (mirrors onnxruntime.InferenceSession) -----------
@@ -850,3 +877,173 @@ class OnnxMLXSession:
         x    = self._v(values, node.input[1])
         y    = self._v(values, node.input[2])
         values[node.output[0]] = mx.where(cond, x, y)
+
+    def _op_erf(self, node, values):
+        values[node.output[0]] = mx.erf(self._v(values, node.input[0]))
+
+    def _op_exp(self, node, values):
+        values[node.output[0]] = mx.exp(self._v(values, node.input[0]))
+
+    def _op_log(self, node, values):
+        values[node.output[0]] = mx.log(self._v(values, node.input[0]))
+
+    def _op_instance_norm(self, node, values):
+        x     = self._v(values, node.input[0])   # [N, C, d1, ..., dn]
+        scale = self._v(values, node.input[1])   # [C]
+        bias  = self._v(values, node.input[2])   # [C]
+        eps   = _attr(node, "epsilon", 1e-5)
+
+        # Normalise over all spatial axes (everything beyond [N, C])
+        spatial_axes = tuple(range(2, x.ndim))
+        mean = mx.mean(x, axis=spatial_axes, keepdims=True)
+        var  = mx.mean((x - mean) ** 2, axis=spatial_axes, keepdims=True)
+        out  = (x - mean) / mx.sqrt(var + eps)
+
+        # Broadcast scale/bias to match input rank
+        param_shape = (1, -1) + (1,) * (x.ndim - 2)
+        out = out * scale.reshape(param_shape) + bias.reshape(param_shape)
+        values[node.output[0]] = out
+
+    def _op_reduceprod(self, node, values):
+        x        = self._v(values, node.input[0])
+        keepdims = bool(_attr(node, "keepdims", 1))
+        if len(node.input) > 1 and node.input[1]:
+            axes = [int(a) for a in np.array(self._v(values, node.input[1]))]
+        else:
+            axes = _attr(node, "axes", None)
+        values[node.output[0]] = mx.prod(x, axis=axes, keepdims=keepdims)
+
+    def _op_scatter_elements(self, node, values):
+        data    = self._v(values, node.input[0])
+        indices = self._v(values, node.input[1])
+        updates = self._v(values, node.input[2])
+        axis = _attr(node, "axis", 0)
+        arr  = np.array(data)
+        idx = np.array(indices).astype(np.intp)
+        upd = np.array(updates)
+        np.put_along_axis(arr, idx, upd, axis=axis)
+        values[node.output[0]] = _np_to_mx(arr)
+
+    def _op_topk(self, node, values):
+        x    = self._v(values, node.input[0])
+        k_t  = self._v(values, node.input[1])
+        k    = int(np.array(k_t))
+        axis = _attr(node, "axis", -1)
+        largest = bool(_attr(node, "largest", 1))
+        sorted_ = bool(_attr(node, "sorted", 1))
+
+        arr = np.array(x)
+        if largest:
+            idx = np.argsort(arr, axis=axis)[..., -k:]
+            if sorted_:
+                # reverse so largest comes first
+                idx = np.flip(idx, axis=axis)
+        else:
+            idx = np.argsort(arr, axis=axis)[..., :k]
+            if sorted_:
+                idx = np.flip(idx, axis=axis)
+        vals = np.take_along_axis(arr, idx, axis=axis)
+        values[node.output[0]] = _np_to_mx(vals.copy())
+        if len(node.output) > 1 and node.output[1]:
+            values[node.output[1]] = _np_to_mx(idx.astype(np.int32).copy())
+
+    def _op_argmin(self, node, values):
+        x        = self._v(values, node.input[0])
+        axis     = _attr(node, "axis", 0)
+        keepdims = bool(_attr(node, "keepdims", 1))
+        values[node.output[0]] = mx.argmin(x, axis=axis, keepdims=keepdims)
+
+    def _op_argmax(self, node, values):
+        x        = self._v(values, node.input[0])
+        axis     = _attr(node, "axis", 0)
+        keepdims = bool(_attr(node, "keepdims", 1))
+        values[node.output[0]] = mx.argmax(x, axis=axis, keepdims=keepdims)
+
+    def _op_cumsum(self, node, values):
+        x    = self._v(values, node.input[0])
+        axis = int(np.array(self._v(values, node.input[1])))
+        exclusive = bool(_attr(node, "exclusive", 0))
+        reverse   = bool(_attr(node, "reverse", 0))
+        arr = np.array(x)
+        if reverse:
+            arr = np.flip(arr, axis=axis)
+        out = np.cumsum(arr, axis=axis)
+        if exclusive:
+            out = np.roll(out, 1, axis=axis)
+            slices = [slice(None)] * arr.ndim
+            slices[axis] = slice(0, 1)
+            out[tuple(slices)] = 0
+        if reverse:
+            out = np.flip(out, axis=axis)
+        values[node.output[0]] = _np_to_mx(np.ascontiguousarray(out))
+
+    def _op_nonzero(self, node, values):
+        x   = self._v(values, node.input[0])
+        arr = np.array(x)
+        idx = np.nonzero(arr)
+        values[node.output[0]] = _np_to_mx(np.array(idx, dtype=np.int32))
+
+    def _op_scatter_nd(self, node, values):
+        data    = self._v(values, node.input[0])
+        indices = self._v(values, node.input[1])
+        updates = self._v(values, node.input[2])
+        arr = np.array(data)
+        idx = tuple(np.array(indices)[..., i] for i in range(indices.shape[-1]))
+        arr[idx] = np.array(updates)
+        values[node.output[0]] = _np_to_mx(arr)
+
+    def _op_gather_nd(self, node, values):
+        x       = self._v(values, node.input[0])
+        indices = self._v(values, node.input[1])
+        arr = np.array(x)
+        idx = np.array(indices)
+        idx_t = tuple(idx[..., i] for i in range(idx.shape[-1]))
+        values[node.output[0]] = _np_to_mx(arr[idx_t])
+
+    def _op_gather_elements(self, node, values):
+        x       = self._v(values, node.input[0])
+        indices = self._v(values, node.input[1])
+        axis    = _attr(node, "axis", 0)
+        arr = np.array(x)
+        idx = np.array(indices).astype(np.intp)
+        values[node.output[0]] = _np_to_mx(np.take_along_axis(arr, idx, axis=axis))
+
+    def _op_einsum(self, node, values):
+        equation = _attr(node, "equation", b"").decode()
+        inputs   = [np.array(self._v(values, n)) for n in node.input]
+        values[node.output[0]] = _np_to_mx(np.einsum(equation, *inputs))
+
+    def _op_not(self, node, values):
+        x = self._v(values, node.input[0])
+        values[node.output[0]] = ~x.astype(mx.bool_)
+
+    def _op_and(self, node, values):
+        a = self._v(values, node.input[0]).astype(mx.bool_)
+        b = self._v(values, node.input[1]).astype(mx.bool_)
+        values[node.output[0]] = a & b
+
+    def _op_or(self, node, values):
+        a = self._v(values, node.input[0]).astype(mx.bool_)
+        b = self._v(values, node.input[1]).astype(mx.bool_)
+        values[node.output[0]] = a | b
+
+    def _op_greater_equal(self, node, values):
+        a = self._v(values, node.input[0])
+        b = self._v(values, node.input[1])
+        values[node.output[0]] = (a >= b)
+
+    def _op_less_equal(self, node, values):
+        a = self._v(values, node.input[0])
+        b = self._v(values, node.input[1])
+        values[node.output[0]] = (a <= b)
+
+    def _op_greater(self, node, values):
+        a = self._v(values, node.input[0])
+        b = self._v(values, node.input[1])
+        values[node.output[0]] = (a > b)
+
+    def _op_hard_sigmoid(self, node, values):
+        x     = self._v(values, node.input[0])
+        alpha = _attr(node, "alpha", 0.2)
+        beta  = _attr(node, "beta",  0.5)
+        values[node.output[0]] = mx.clip(alpha * x + beta, 0.0, 1.0)
