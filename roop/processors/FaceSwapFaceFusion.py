@@ -1,19 +1,21 @@
-"""FaceSwapFaceFusion -- MLX port pending.
+"""FaceSwapFaceFusion -- MLX backend.
 
-Handles the FaceFusion / HyperSwap family (``hyperswap_1a/1b/1c_256``)
-in the upstream repo via an ONNX Runtime path with custom pre/post-
-processing (different mean/std than InsightFace inswapper).
-
-The model catalogue (``FACE_SWAPPER_MODELS``) is preserved so the
-UI dropdown that lists swap models still works -- only Initialize/Run
-raise.
+Handles the FaceFusion / HyperSwap family (hyperswap_1a/1b/1c_256).
+Unlike InsightFace inswapper, HyperSwap takes the raw normed_embedding
+directly (no emap projection) and returns both the swapped face and a
+blend mask (mask is not used by the caller).
 """
+
+import os
+
+import numpy as np
+
+from roop.typing import Face, Frame
+from roop.utilities import resolve_relative_path
 
 
 class FaceSwapFaceFusion:
     plugin_options: dict = None
-    devicename: str = None
-    device_id: int = 0
     swap_type: str = None
 
     processorname = "faceswap_ff"
@@ -47,14 +49,45 @@ class FaceSwapFaceFusion:
     }
 
     def Initialize(self, plugin_options: dict):
-        raise NotImplementedError(
-            "FaceSwapFaceFusion has not been ported to MLX yet."
-        )
+        if self.plugin_options is not None:
+            if self.plugin_options.get("modelname") != plugin_options.get("modelname"):
+                self.Release()
 
-    def Run(self, source_face, target_face, temp_frame):
-        raise NotImplementedError(
-            "FaceSwapFaceFusion has not been ported to MLX yet."
+        self.plugin_options = plugin_options
+
+        if getattr(self, "_session", None) is not None:
+            return
+
+        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
+
+        modelname = plugin_options.get("modelname", "HyperSwap 1B")
+        config = self.FACE_SWAPPER_MODELS[modelname]
+        self.swap_type = config["swap_type"]
+
+        model_path = resolve_relative_path("../models/" + config["file"])
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"HyperSwap model not found: {model_path}")
+
+        self._session = OnnxMLXSession(model_path)
+        self._output_name = self._session.get_outputs()[0].name
+
+    def Run(self, source_faceset, target_face: Face, temp_frame: Frame) -> Frame:
+        if hasattr(source_faceset, "faces") and source_faceset.faces:
+            source_face = source_faceset.faces[0]
+        else:
+            source_face = source_faceset
+
+        source = source_face.normed_embedding.reshape(1, -1).astype(np.float32)
+
+        result = self._session.run(
+            [self._output_name],
+            {"source": source, "target": np.ascontiguousarray(temp_frame)},
         )
+        return result[0]
+
+    def RunBatch(self, source_faces, target_faces, temp_frames):
+        return [self.Run(sf, tf, fr)
+                for sf, tf, fr in zip(source_faces, target_faces, temp_frames)]
 
     def Release(self):
-        return None
+        self._session = None
