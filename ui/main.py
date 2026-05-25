@@ -96,14 +96,27 @@ def run():
         label, .label-wrap, .block-label {
             color: #ccc !important;
         }
-        button:not(.primary) {
+        /* Buttons */
+        button, .btn, [class*="svelte-"] button {
             background-color: #2a2a2a !important;
             color: #e0e0e0 !important;
-            border-color: #444 !important;
+            border-color: #555 !important;
         }
-        .tab-nav button {
+        button.primary, .primary button, button[variant="primary"] {
+            background-color: #1a6b6b !important;
+            color: #fff !important;
+            border-color: #1a8a8a !important;
+        }
+        button:hover, [class*="svelte-"] button:hover {
+            background-color: #3a3a3a !important;
+        }
+        .tab-nav button, .tab-nav button.selected {
+            background-color: transparent !important;
             color: #ccc !important;
         }
+        /* Sliders, checkboxes, radios */
+        input[type="range"] { accent-color: #1a9090; }
+        input[type="checkbox"], input[type="radio"] { accent-color: #1a9090; }
     """
 
     while run_server:
