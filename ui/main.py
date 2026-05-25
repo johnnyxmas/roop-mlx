@@ -80,6 +80,8 @@ def run():
         }
         .image-container.svelte-1l6wqyv {height: 100%}
 
+        html, body { background: #0f0f0f !important; color: #e0e0e0 !important; }
+
         /* Override Gradio 5 design tokens — these beat Svelte-scoped selectors */
         :root, .gradio-container {
             --body-background-fill: #0f0f0f;
@@ -155,7 +157,7 @@ def run():
             "origin": gr.themes.Origin(),
             "soft": gr.themes.Soft(),
         }
-        _theme_val = roop.globals.CFG.selected_theme or "Default"
+        _theme_val = roop.globals.CFG.selected_theme or "base"
         theme_obj = _BUILTIN_THEMES.get(_theme_val.lower(), _theme_val)
         with gr.Blocks(
             title=f"{roop.metadata.name} {roop.metadata.version}",
