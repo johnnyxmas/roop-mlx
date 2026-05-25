@@ -146,9 +146,12 @@ class YOLOFaceDetector:
         num_ch = output.shape[1]
         boxes_cxcywh = output[:, :4]
         scores = output[:, 4]
+        # YOLOv8-Face: 20 ch = 4 bbox + 1 conf + 5×(x,y,vis); older 15-ch = 5×(x,y)
         has_landmarks = num_ch >= 15
+        kps_per_point = 3 if num_ch >= 20 else 2
         if has_landmarks:
-            landmarks_raw = output[:, 5:15].reshape(-1, 5, 2)
+            kps_cols = 5 * kps_per_point
+            landmarks_raw = output[:, 5:5 + kps_cols].reshape(-1, 5, kps_per_point)[:, :, :2]
 
         # confidence filter
         mask = scores > self.CONF_THRESHOLD
