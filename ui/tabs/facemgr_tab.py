@@ -144,7 +144,7 @@ def on_fb_files_changed(
     video_image = None
     cut_button = None
     for f in inputfiles:
-        source_path = f.name
+        source_path = f.path
         if util.has_image_extension(source_path):
             slider = gr.Slider(interactive=False)
             video_image = gr.Image(interactive=False)
@@ -200,13 +200,13 @@ def on_face_selected(evt: gr.SelectData) -> None:
 
 
 def on_frame_num_fst_changed(inputfiles: List[gr.Files], frame_num: int) -> Frame:
-    filename = inputfiles[0].name
+    filename = inputfiles[0].path
     video_image, _ = display_video_frame(filename, frame_num, 0)
     return video_image
 
 
 def on_cutfromframe_clicked(inputfiles: List[gr.Files], frame_num: int) -> List[Frame]:
-    filename = inputfiles[0].name
+    filename = inputfiles[0].path
     SELECTION_FACES_DATA = extract_face_images(filename, (True, frame_num), 0.5)
     for f in SELECTION_FACES_DATA:
         image = f[1]
