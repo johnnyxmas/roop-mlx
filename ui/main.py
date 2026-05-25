@@ -80,43 +80,58 @@ def run():
         }
         .image-container.svelte-1l6wqyv {height: 100%}
 
-        /* Force dark background regardless of OS colour scheme */
-        body, .gradio-container, .main, footer {
-            background-color: #0f0f0f !important;
-            color: #e0e0e0 !important;
+        /* Override Gradio 5 design tokens — these beat Svelte-scoped selectors */
+        :root, .gradio-container {
+            --body-background-fill: #0f0f0f;
+            --body-text-color: #e0e0e0;
+            --body-text-color-subdued: #aaa;
+
+            --block-background-fill: #1a1a1a;
+            --block-border-color: #333;
+            --block-label-background-fill: #1a1a1a;
+            --block-label-text-color: #aaa;
+            --block-title-text-color: #ccc;
+            --block-info-text-color: #aaa;
+
+            --panel-background-fill: #111;
+            --panel-border-color: #333;
+
+            --input-background-fill: #222;
+            --input-border-color: #444;
+            --input-placeholder-color: #666;
+            --input-text-color: #e0e0e0;
+
+            --button-secondary-background-fill: #2a2a2a;
+            --button-secondary-background-fill-hover: #383838;
+            --button-secondary-border-color: #555;
+            --button-secondary-text-color: #e0e0e0;
+
+            --button-primary-background-fill: #1a7a7a;
+            --button-primary-background-fill-hover: #1a9090;
+            --button-primary-border-color: #1a9090;
+            --button-primary-text-color: #fff;
+
+            --button-cancel-background-fill: #5a1a1a;
+            --button-cancel-text-color: #ffaaaa;
+
+            --checkbox-background-color: #222;
+            --checkbox-border-color: #555;
+            --checkbox-label-background-fill: #1a1a1a;
+            --checkbox-label-text-color: #ccc;
+
+            --slider-color: #1a9090;
+            --table-even-background-fill: #1a1a1a;
+            --table-odd-background-fill: #222;
+            --table-row-focus: #2a2a2a;
+
+            --color-accent: #1a9090;
+            --color-accent-soft: #1a404040;
+            --link-text-color: #4fc3c3;
+            --link-text-color-hover: #6fd5d5;
         }
-        .block, .form, .panel, .gap, .wrap,
-        .svelte-1ipelgc, .svelte-phx28p {
-            background-color: #1a1a1a !important;
-        }
-        input, textarea, select, .input-wrap {
-            background-color: #222 !important;
-            color: #e0e0e0 !important;
-        }
-        label, .label-wrap, .block-label {
-            color: #ccc !important;
-        }
-        /* Buttons */
-        button, .btn, [class*="svelte-"] button {
-            background-color: #2a2a2a !important;
-            color: #e0e0e0 !important;
-            border-color: #555 !important;
-        }
-        button.primary, .primary button, button[variant="primary"] {
-            background-color: #1a6b6b !important;
-            color: #fff !important;
-            border-color: #1a8a8a !important;
-        }
-        button:hover, [class*="svelte-"] button:hover {
-            background-color: #3a3a3a !important;
-        }
-        .tab-nav button, .tab-nav button.selected {
-            background-color: transparent !important;
-            color: #ccc !important;
-        }
-        /* Sliders, checkboxes, radios */
-        input[type="range"] { accent-color: #1a9090; }
-        input[type="checkbox"], input[type="radio"] { accent-color: #1a9090; }
+        /* Tabs */
+        .tab-nav button { color: #aaa !important; }
+        .tab-nav button.selected { color: #fff !important; border-color: #1a9090 !important; }
     """
 
     while run_server:
