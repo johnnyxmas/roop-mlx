@@ -80,6 +80,30 @@ def run():
         }
         .image-container.svelte-1l6wqyv {height: 100%}
 
+        /* Force dark background regardless of OS colour scheme */
+        body, .gradio-container, .main, footer {
+            background-color: #0f0f0f !important;
+            color: #e0e0e0 !important;
+        }
+        .block, .form, .panel, .gap, .wrap,
+        .svelte-1ipelgc, .svelte-phx28p {
+            background-color: #1a1a1a !important;
+        }
+        input, textarea, select, .input-wrap {
+            background-color: #222 !important;
+            color: #e0e0e0 !important;
+        }
+        label, .label-wrap, .block-label {
+            color: #ccc !important;
+        }
+        button:not(.primary) {
+            background-color: #2a2a2a !important;
+            color: #e0e0e0 !important;
+            border-color: #444 !important;
+        }
+        .tab-nav button {
+            color: #ccc !important;
+        }
     """
 
     while run_server:
@@ -110,7 +134,6 @@ def run():
             theme=theme_obj,
             css=mycss,
             delete_cache=(60, 86400),
-            js="() => { document.documentElement.classList.add('dark'); }",
         ) as ui:
             with gr.Row(variant="compact"):
                 gr.Markdown(
