@@ -9,6 +9,12 @@ from roop.capturer import get_video_frame, get_video_frame_total
 from typing import List, Tuple, Optional
 from roop.typing import Frame
 
+
+def _fpath(f) -> str:
+    """Return filesystem path from a Gradio file object (FileData or NamedString)."""
+    return f.path if hasattr(f, "path") else str(f)
+
+
 selected_face_index = -1
 thumbs = []
 images = []
@@ -144,7 +150,7 @@ def on_fb_files_changed(
     video_image = None
     cut_button = None
     for f in inputfiles:
-        source_path = f.path
+        source_path = _fpath(f)
         if util.has_image_extension(source_path):
             slider = gr.Slider(interactive=False)
             video_image = gr.Image(interactive=False)
@@ -200,13 +206,13 @@ def on_face_selected(evt: gr.SelectData) -> None:
 
 
 def on_frame_num_fst_changed(inputfiles: List[gr.Files], frame_num: int) -> Frame:
-    filename = inputfiles[0].path
+    filename = _fpath(inputfiles[0])
     video_image, _ = display_video_frame(filename, frame_num, 0)
     return video_image
 
 
 def on_cutfromframe_clicked(inputfiles: List[gr.Files], frame_num: int) -> List[Frame]:
-    filename = inputfiles[0].path
+    filename = _fpath(inputfiles[0])
     SELECTION_FACES_DATA = extract_face_images(filename, (True, frame_num), 0.5)
     for f in SELECTION_FACES_DATA:
         image = f[1]

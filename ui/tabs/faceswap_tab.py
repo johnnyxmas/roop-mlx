@@ -17,6 +17,11 @@ from roop.utilities import clean_dir
 last_image = None
 
 
+def _fpath(f) -> str:
+    """Return filesystem path from a Gradio file object (FileData or NamedString)."""
+    return f.path if hasattr(f, "path") else str(f)
+
+
 IS_INPUT = True
 SELECTED_FACE_INDEX = 0
 
@@ -693,7 +698,7 @@ def on_srcfile_changed(srcfiles, progress=gr.Progress()):
         return gr.Column(visible=False), None, ui.globals.ui_input_thumbs, None
 
     for f in srcfiles:
-        source_path = f.path
+        source_path = _fpath(f)
         if source_path.lower().endswith("fsz"):
             progress(0, desc="Retrieving faces from Faceset File")
             unzipfolder = os.path.join(os.environ["TEMP"], "faceset")
@@ -816,7 +821,7 @@ def on_use_face_from_selected(files, frame_num):
     IS_INPUT = False
     thumbs = []
 
-    roop.globals.target_path = files[selected_preview_index].path
+    roop.globals.target_path = _fpath(files[selected_preview_index])
     if util.is_image(
         roop.globals.target_path
     ) and not roop.globals.target_path.lower().endswith(("gif")):
@@ -943,7 +948,7 @@ def on_preview_frame_changed(
     if files is None or selected_preview_index >= len(files) or frame_num is None:
         return None, None, gr.Slider(info=timeinfo)
 
-    filename = files[selected_preview_index].path
+    filename = _fpath(files[selected_preview_index])
     if util.is_video(filename) or filename.lower().endswith("gif"):
         current_frame = get_video_frame(filename, frame_num)
         if current_video_fps == 0:
@@ -1068,7 +1073,7 @@ def on_preview_mask(swap_model, frame_num, files, clip_text, mask_engine):
     ):
         return None
 
-    filename = files[selected_preview_index].path
+    filename = _fpath(files[selected_preview_index])
     if util.is_video(filename) or filename.lower().endswith("gif"):
         current_frame = get_video_frame(filename, frame_num)
     else:
@@ -1120,7 +1125,7 @@ def test_all_swappers(
     if files is None or len(files) < 1 or frame_num is None:
         return None
 
-    filename = files[selected_preview_index].path
+    filename = _fpath(files[selected_preview_index])
     if util.is_video(filename) or filename.lower().endswith("gif"):
         current_frame = get_video_frame(filename, frame_num)
     else:
@@ -1459,7 +1464,7 @@ def on_destfiles_changed(destfiles):
         return gr.Slider(value=1, maximum=1, info="0:00:00"), "", ""
 
     for f in destfiles:
-        list_files_process.append(ProcessEntry(f.path, 0, 0, 0))
+        list_files_process.append(ProcessEntry(_fpath(f), 0, 0, 0))
 
     selected_preview_index = 0
     idx = selected_preview_index
@@ -1526,7 +1531,7 @@ def on_destfiles_selected(evt: gr.SelectData):
 
 def on_resultfiles_selected(evt: gr.SelectData, files):
     selected_index = evt.index
-    filename = files[selected_index].path
+    filename = _fpath(files[selected_index])
     return display_output(filename)
 
 
@@ -1535,7 +1540,7 @@ def on_resultfiles_finished(files):
     if files is None or len(files) < 1:
         return None, None
 
-    filename = files[selected_index].path
+    filename = _fpath(files[selected_index])
     return display_output(filename)
 
 

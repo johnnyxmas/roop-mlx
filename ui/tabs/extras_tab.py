@@ -5,6 +5,12 @@ import roop.util_ffmpeg as ffmpeg
 import roop.globals
 from roop.utilities import clean_dir
 
+
+def _fpath(f) -> str:
+    """Return filesystem path from a Gradio file object (FileData or NamedString)."""
+    return f.path if hasattr(f, "path") else str(f)
+
+
 frame_filters_map = {
     "Colorize B/W Images (Deoldify Artistic)": {
         "colorizer": {"subtype": "deoldify_artistic"}
@@ -197,7 +203,7 @@ def on_cut_video(files, cut_start_frame, cut_end_frame, reencode):
 
     resultfiles = []
     for tf in files:
-        f = tf.path
+        f = _fpath(tf)
         destfile = util.get_destfilename_from_path(f, roop.globals.output_path, "_cut")
         ffmpeg.cut_video(f, destfile, cut_start_frame, cut_end_frame, reencode)
         if os.path.isfile(destfile):
@@ -213,7 +219,7 @@ def on_join_videos(files, chk_encode):
 
     filenames = []
     for f in files:
-        filenames.append(f.path)
+        filenames.append(_fpath(f))
     destfile = util.get_destfilename_from_path(
         filenames[0], roop.globals.output_path, "_join"
     )
@@ -234,7 +240,7 @@ def on_extras_create_video_from_gif(files, fps):
     filenames = []
     resultfiles = []
     for f in files:
-        filenames.append(f.path)
+        filenames.append(_fpath(f))
 
     destfilename = os.path.join(
         roop.globals.output_path, "img2video." + roop.globals.CFG.output_video_format
@@ -251,7 +257,7 @@ def on_extras_repair_video(files):
 
     resultfiles = []
     for tf in files:
-        f = tf.path
+        f = _fpath(tf)
         destfile = util.get_destfilename_from_path(
             f, roop.globals.output_path, "_repair"
         )
@@ -294,7 +300,7 @@ def on_extras_extract_frames(files):
 
     resultfiles = []
     for tf in files:
-        f = tf.path
+        f = _fpath(tf)
         resfolder = ffmpeg.extract_frames(f)
         for file in os.listdir(resfolder):
             outfile = os.path.join(resfolder, file)
@@ -319,7 +325,7 @@ def on_frame_process(files, filterselection, upscaleselection):
     list_files_process: list[ProcessEntry] = []
 
     for tf in files:
-        list_files_process.append(ProcessEntry(tf.path, 0, 0, 0))
+        list_files_process.append(ProcessEntry(_fpath(tf), 0, 0, 0))
 
     processoroptions = {}
     filter = next((x for x in frame_filters_map.keys() if x == filterselection), None)
