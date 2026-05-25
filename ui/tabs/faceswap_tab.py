@@ -232,6 +232,7 @@ def faceswap_tab():
                 previewimage = gr.Image(
                     label="Preview Image",
                     height=576,
+                    type="numpy",
                     interactive=False,
                     visible=True,
                 )
@@ -950,7 +951,6 @@ def on_preview_frame_changed(
 
     filename = _fpath(files[selected_preview_index])
     if util.is_video(filename) or filename.lower().endswith("gif"):
-        current_frame = get_video_frame(filename, frame_num)
         if current_video_fps == 0:
             current_video_fps = 1
         secs = (frame_num - 1) / current_video_fps
@@ -967,8 +967,8 @@ def on_preview_frame_changed(
 
     if not fake_preview or len(roop.globals.INPUT_FACESETS) < 1:
         return (
-            gr.Image(value=util.convert_to_gradio(current_frame), visible=True),
-            gr.ImageEditor(visible=False),
+            util.convert_to_gradio(current_frame),
+            gr.update(visible=False),
             gr.Slider(info=timeinfo),
         )
 
@@ -1005,7 +1005,7 @@ def on_preview_frame_changed(
 
     current_frame = live_swap(current_frame, options)
     if current_frame is None:
-        return gr.Image(visible=True), None, gr.Slider(info=timeinfo)
+        return None, None, gr.Slider(info=timeinfo)
     return (
         gr.Image(value=util.convert_to_gradio(current_frame), visible=True),
         gr.ImageEditor(visible=False),
