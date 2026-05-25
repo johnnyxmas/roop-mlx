@@ -110,6 +110,7 @@ def run():
             theme=theme_obj,
             css=mycss,
             delete_cache=(60, 86400),
+            js="() => { document.documentElement.classList.add('dark'); }",
         ) as ui:
             with gr.Row(variant="compact"):
                 gr.Markdown(
