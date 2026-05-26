@@ -84,6 +84,10 @@ def run():
 
         /* Override Gradio 5 design tokens — these beat Svelte-scoped selectors */
         :root, .gradio-container {
+            /* Primary fill tokens (used by block wrappers, headers, rows) */
+            --background-fill-primary: #1a1a1a;
+            --background-fill-secondary: #111;
+
             --body-background-fill: #0f0f0f;
             --body-text-color: #e0e0e0;
             --body-text-color-subdued: #aaa;
@@ -130,10 +134,45 @@ def run():
             --color-accent-soft: #1a404040;
             --link-text-color: #4fc3c3;
             --link-text-color-hover: #6fd5d5;
+
+            /* Neutral scale used by Base theme for backgrounds */
+            --neutral-50: #111;
+            --neutral-100: #1a1a1a;
+            --neutral-200: #222;
+            --neutral-300: #333;
+            --neutral-400: #555;
+            --neutral-500: #888;
+            --neutral-600: #aaa;
+            --neutral-700: #ccc;
+            --neutral-800: #e0e0e0;
+            --neutral-900: #f0f0f0;
+            --neutral-950: #f8f8f8;
         }
-        /* Tabs */
-        .tab-nav button { color: #aaa !important; }
+
+        /* Hard overrides for elements that ignore the tokens */
+        html, body, .gradio-container { background: #0f0f0f !important; color: #e0e0e0 !important; }
+        .block, fieldset, .form { background: #1a1a1a !important; border-color: #333 !important; }
+        .gap, .gap-hide { background: #111 !important; }
+        .compact { background: #0f0f0f !important; }
+
+        /* Tab nav bar */
+        .tab-nav { background: #0f0f0f !important; border-bottom-color: #333 !important; }
+        .tab-nav button { background: transparent !important; color: #aaa !important; border-color: transparent !important; }
         .tab-nav button.selected { color: #fff !important; border-color: #1a9090 !important; }
+
+        /* Accordion / summary */
+        .label-wrap, .label-wrap span { background: #1a1a1a !important; color: #ccc !important; }
+        details > summary { background: #222 !important; border-color: #444 !important; color: #ccc !important; }
+
+        /* Dropdown menus */
+        .wrap-inner, ul.options { background: #1a1a1a !important; border-color: #444 !important; }
+        ul.options li { color: #e0e0e0 !important; }
+        ul.options li:hover, ul.options li.selected { background: #2a2a2a !important; }
+
+        /* Inputs */
+        input[type=number], input[type=text], textarea, select {
+            background: #222 !important; color: #e0e0e0 !important; border-color: #444 !important;
+        }
     """
 
     while run_server:

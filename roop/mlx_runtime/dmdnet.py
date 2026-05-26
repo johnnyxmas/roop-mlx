@@ -247,13 +247,17 @@ def _read_mem(
     q_np = np.array(q, dtype=np.float32)   # [1, K, kH, kW]
 
     S, K, kH, kW = k_np.shape
-    scale = math.sqrt(float(K * kH * kW))
 
-    # Dot-product attention: sim[b, s] = sum(q[b] * k[s])
-    # Use float64 for the einsum to avoid overflow with large activations
-    sim = np.einsum('bkhw,skhw->bs', q_np.astype(np.float64),
-                    k_np.astype(np.float64)) / scale  # [1, S]
-    score = _softmax_np(sim.astype(np.float32), axis=1)   # [1, S]
+    # Cosine similarity: normalise both query and each key before dot-product.
+    # The memory keys have large magnitude (std~14) so scaled-dot-product
+    # produces sim values in the thousands, collapsing softmax to one-hot and
+    # tiling a single memory entry's pattern across the face.
+    k_flat = k_np.reshape(S, -1).astype(np.float64)          # [S, K*kH*kW]
+    q_flat = q_np.reshape(1, -1).astype(np.float64)          # [1, K*kH*kW]
+    k_norm = k_flat / (np.linalg.norm(k_flat, axis=1, keepdims=True) + 1e-8)
+    q_norm = q_flat / (np.linalg.norm(q_flat, axis=1, keepdims=True) + 1e-8)
+    sim = (q_norm @ k_norm.T).astype(np.float32)             # [1, S] in [-1, 1]
+    score = _softmax_np(sim, axis=1)                          # [1, S]
 
     S, V, vH, vW = v_np.shape
     # Weighted sum of values

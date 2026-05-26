@@ -64,9 +64,10 @@ class Enhance_DMDNet:
         model_path = resolve_relative_path("../models/DMDNet.pth")
         self._model = DMDNetMLX(model_path)
 
-    def Run(self, source_faceset, target_face: Face, temp_frame: Frame) -> Frame:
+    def Run(self, source_faceset, target_face: Face, temp_frame: Frame):
         input_size = 512
         orig_h, orig_w = temp_frame.shape[:2]
+        scale_factor = int(input_size / orig_w) if orig_w > 0 else 1
 
         # Resize to 512×512 if needed
         if orig_h != input_size or orig_w != input_size:
@@ -75,8 +76,9 @@ class Enhance_DMDNet:
         else:
             frame = temp_frame.copy()
 
-        # BGR [0,255] → float32 NCHW [-1, 1]  (no colour conversion — model is BGR)
-        img = frame.astype(np.float32) / 127.5 - 1.0          # [0,255] → [-1,1]
+        # BGR→RGB, [0,255] → float32 NCHW [-1, 1]
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img = frame_rgb.astype(np.float32) / 127.5 - 1.0      # [0,255] → [-1,1]
         img_nchw = img.transpose(2, 0, 1)[np.newaxis]          # [1,3,512,512]
 
         # Build component locations from target face landmarks (if available)
@@ -107,12 +109,13 @@ class Enhance_DMDNet:
         locs_arr = np.array([locs], dtype=np.float32)           # [1, 4, 4]
         out_nchw = self._model.forward(img_nchw, locs_arr)     # [1,3,512,512]
 
-        # Post-process: [-1,1] → [0,255] uint8 HWC BGR
+        # Post-process: [-1,1] → [0,1] → [0,255] uint8, RGB→BGR
         out = out_nchw[0] * 0.5 + 0.5                          # [0,1]
-        out = (out * 255.0).clip(0, 255).astype(np.uint8)
-        result = out.transpose(1, 2, 0)                         # HWC BGR
+        out = out.transpose(1, 2, 0)                            # HWC RGB
+        out = np.clip(out * 255.0, 0, 255).astype(np.uint8)
+        result = cv2.cvtColor(out, cv2.COLOR_RGB2BGR)           # HWC BGR
 
-        return result
+        return result, scale_factor
 
     def Release(self):
         self._model = None

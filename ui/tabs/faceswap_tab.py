@@ -951,6 +951,7 @@ def on_preview_frame_changed(
 
     filename = _fpath(files[selected_preview_index])
     if util.is_video(filename) or filename.lower().endswith("gif"):
+        current_frame = get_video_frame(filename, frame_num)
         if current_video_fps == 0:
             current_video_fps = 1
         secs = (frame_num - 1) / current_video_fps
