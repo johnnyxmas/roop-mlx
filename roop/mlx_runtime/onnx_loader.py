@@ -28,9 +28,6 @@ import onnx
 from onnx import TensorProto, numpy_helper
 
 
-# ---------------------------------------------------------------------------
-# dtype mapping
-# ---------------------------------------------------------------------------
 _ONNX_TO_MLX_DTYPE = {
     TensorProto.FLOAT:   mx.float32,
     TensorProto.FLOAT16: mx.float16,
@@ -66,9 +63,6 @@ def _np_to_mx(arr: np.ndarray) -> mx.array:
     return mx.array(arr)
 
 
-# ---------------------------------------------------------------------------
-# Attribute helpers
-# ---------------------------------------------------------------------------
 def _attr(node, name, default=None):
     for a in node.attribute:
         if a.name == name:
@@ -88,9 +82,7 @@ def _attr(node, name, default=None):
     return default
 
 
-# ---------------------------------------------------------------------------
-# NodeArg stub (mirrors onnxruntime.NodeArg)
-# ---------------------------------------------------------------------------
+# mirrors onnxruntime.NodeArg
 class _NodeArg:
     def __init__(self, name: str, shape: list):
         self._name = name
@@ -105,9 +97,6 @@ class _NodeArg:
         return self._shape
 
 
-# ---------------------------------------------------------------------------
-# Main executor
-# ---------------------------------------------------------------------------
 class OnnxMLXSession:
     """Execute an ONNX model with MLX.
 
@@ -120,21 +109,88 @@ class OnnxMLXSession:
         Defaults to float32 for accuracy.
     """
 
+    # Ops heavy enough that we force mx.eval() on their output to keep the
+    # lazy computation graph small and avoid OOM on large models.
+    _EVAL_AFTER = frozenset({"Gemm", "MatMul"})
+
+    # Metal memory limits are set once per process, not per session.
+    _metal_configured: bool = False
+
+    @staticmethod
+    def _configure_metal() -> None:
+        """Set Metal memory and cache limits once at first session creation."""
+        try:
+            import psutil
+            total = psutil.virtual_memory().total
+            try:
+                import roop.globals
+                limit_gb = getattr(getattr(roop.globals, "CFG", None), "memory_limit", 0) or 0
+            except Exception:
+                limit_gb = 0
+            if limit_gb > 0:
+                metal_limit = int(limit_gb * 1024 ** 3)
+            else:
+                # Reserve 2 GB for OS + non-MLX app memory.
+                metal_limit = max(total - 2 * 1024 ** 3, total // 2)
+            mx.set_memory_limit(metal_limit)
+            # Keep a 1 GB buffer pool for recently freed Metal buffers.
+            mx.set_cache_limit(1 * 1024 ** 3)
+        except Exception:
+            pass
+
     def __init__(self, model_path: str, dtype: Any = mx.float32):
+        if not OnnxMLXSession._metal_configured:
+            OnnxMLXSession._configure_metal()
+            OnnxMLXSession._metal_configured = True
+
         self._dtype = dtype
         model = onnx.load(model_path)
         graph = model.graph
-        self._graph = graph
 
-        # Pre-load all initializer weights as MLX arrays
+        # Extract weights as MLX arrays, then immediately free the serialized
+        # bytes from the protobuf so the ONNX file data is not held in Python
+        # memory alongside the MLX copies (would double the model footprint).
         self._weights: dict[str, mx.array] = {}
         for init in graph.initializer:
             arr = numpy_helper.to_array(init).copy()
             if arr.dtype in (np.float32, np.float64, np.float16):
                 arr = arr.astype(np.float32 if dtype == mx.float32 else np.float16)
             self._weights[init.name] = _np_to_mx(arr)
+            # Free serialized bytes immediately — they're now in self._weights.
+            init.ClearField("raw_data")
+            init.ClearField("float_data")
+            init.ClearField("double_data")
+            init.ClearField("int32_data")
+            init.ClearField("int64_data")
 
-        # Collect graph input / output metadata
+        # Pre-compute all Constant nodes and store them alongside weights.
+        # GFPGAN has 262 Constant nodes; without this they are recreated as
+        # mx.array() on every single inference call (one per frame per face).
+        # Storing them in self._weights means run() just copies the reference.
+        _float_dtype = dtype if dtype in (mx.float16, mx.float32) else mx.float32
+        for node in graph.node:
+            if node.op_type != "Constant" or not node.output or not node.output[0]:
+                continue
+            out_name = node.output[0]
+            val_attr = _attr(node, "value", None)
+            if val_attr is not None:
+                self._weights[out_name] = _np_to_mx(val_attr)
+            else:
+                fval = _attr(node, "value_float", None)
+                ival = _attr(node, "value_int", None)
+                if fval is not None:
+                    self._weights[out_name] = mx.array(fval, dtype=_float_dtype)
+                elif ival is not None:
+                    self._weights[out_name] = mx.array(ival, dtype=mx.int32)
+
+        # Pre-evaluate all weights + constants so Metal GPU-upload happens at
+        # load time rather than spiking on the first inference frame.
+        if self._weights:
+            mx.eval(*self._weights.values())
+
+        # Keep only the graph (nodes + topology); model can be GC-ed.
+        self._graph = graph
+
         self._input_names = [i.name for i in graph.input
                              if i.name not in self._weights]
         self._output_names = [o.name for o in graph.output]
@@ -150,7 +206,14 @@ class OnnxMLXSession:
             for o in graph.output
         ]
 
-        # Dispatch table
+        # Precompute last-use index for each non-weight value so run() can
+        # delete intermediate activations the moment they're no longer needed.
+        self._last_use: dict[str, int] = {}
+        for i, node in enumerate(graph.node):
+            for inp in node.input:
+                if inp:
+                    self._last_use[inp] = i
+
         self._dispatch = {
             "Conv":               self._op_conv,
             "Gemm":               self._op_gemm,
@@ -231,8 +294,6 @@ class OnnxMLXSession:
             "ReduceL2":           self._op_reduce_l2,
         }
 
-    # -- public interface (mirrors onnxruntime.InferenceSession) -----------
-
     def get_inputs(self) -> list[_NodeArg]:
         return self._inputs_meta
 
@@ -241,16 +302,36 @@ class OnnxMLXSession:
 
     def run(self, output_names: list[str] | None,
             input_feed: dict[str, np.ndarray]) -> list[np.ndarray]:
-        """Run inference.  Returns a list of numpy arrays."""
+        """Run inference.  Returns a list of numpy arrays.
+
+        Memory strategy
+        ---------------
+        MLX uses lazy evaluation: operations build a computation graph and only
+        execute when mx.eval() is called.  For large models (>500 MB) running
+        the entire graph as one lazy expression causes peak memory proportional
+        to all intermediate activations simultaneously.
+
+        We break this in two ways:
+        1. After Conv / Gemm / MatMul, call mx.eval() on the output to
+           materialise it as a concrete buffer and sever the dependency chain.
+        2. Delete activations from the values dict as soon as the last node
+           that reads them has run (precomputed _last_use map).
+        """
         if output_names is None:
             output_names = self._output_names
+        output_set = frozenset(n for n in output_names if n)
 
         values: dict[str, mx.array] = dict(self._weights)
         for k, v in input_feed.items():
             values[k] = _np_to_mx(np.asarray(v))
 
-        for node in self._graph.node:
+        for i, node in enumerate(self._graph.node):
             op = node.op_type
+            # Constant nodes were pre-computed at load time into self._weights
+            # (already present in values). Skip them to avoid redundant
+            # mx.array() allocation on every inference call.
+            if op == "Constant":
+                continue
             handler = self._dispatch.get(op)
             if handler is None:
                 raise NotImplementedError(
@@ -258,10 +339,27 @@ class OnnxMLXSession:
                 )
             handler(node, values)
 
-        mx.eval(*[values[n] for n in output_names if n in values])
-        return [np.array(values[n]) for n in output_names]
+            # Force evaluation after heavy ops to keep the lazy graph small.
+            if op in self._EVAL_AFTER:
+                for out_name in node.output:
+                    if out_name and out_name in values:
+                        mx.eval(values[out_name])
 
-    # -- helpers -----------------------------------------------------------
+            # Free activations whose last consumer just ran.
+            for inp in node.input:
+                if (inp
+                        and self._last_use.get(inp) == i
+                        and inp not in self._weights
+                        and inp not in output_set
+                        and inp in values):
+                    del values[inp]
+
+        mx.eval(*[values[n] for n in output_names if n in values])
+        outputs = [np.array(values[n]) for n in output_names]
+        # Drop all remaining activations (weights stay in self._weights).
+        for k in [k for k in values if k not in self._weights]:
+            del values[k]
+        return outputs
 
     def _v(self, values: dict, name: str) -> mx.array | None:
         """Fetch a named value; return None if name is empty."""
@@ -273,8 +371,6 @@ class OnnxMLXSession:
         if idx < len(node.output) and node.output[idx]:
             values[node.output[idx]] = val
 
-    # -- spatial layout helpers (NCHW ↔ NHWC) -----------------------------
-
     @staticmethod
     def _to_nhwc(x: mx.array) -> mx.array:
         return mx.transpose(x, [0, 2, 3, 1])
@@ -282,8 +378,6 @@ class OnnxMLXSession:
     @staticmethod
     def _to_nchw(x: mx.array) -> mx.array:
         return mx.transpose(x, [0, 3, 1, 2])
-
-    # -- op implementations ------------------------------------------------
 
     def _op_conv(self, node, values):
         x = self._v(values, node.input[0])
@@ -315,15 +409,11 @@ class OnnxMLXSession:
             values[node.output[0]] = mx.transpose(out, [0, 2, 1])
             return
 
-        # 2-D convolution
-        # ONNX pads: [top, left, bottom, right]; extend if short
+        # ONNX pads: [top, left, bottom, right]
         while len(pads) < 4:
             pads.append(0)
-
-        # asymmetric padding not directly supported in mx.conv2d;
-        # use explicit mx.pad if needed
+        # mx.conv2d requires symmetric padding; use explicit mx.pad for asymmetric cases
         if pads[0] != pads[2] or pads[1] != pads[3]:
-            # pads = [h_start, w_start, h_end, w_end]
             x = mx.pad(x, [(0,0),(0,0),(pads[0],pads[2]),(pads[1],pads[3])])
             padding = 0
         elif auto_pad in (b"SAME_UPPER", b"SAME_LOWER"):
@@ -585,11 +675,13 @@ class OnnxMLXSession:
         if val is not None:
             values[node.output[0]] = _np_to_mx(val)
         else:
-            # float/int scalar attributes
+            # float/int scalar attributes — respect model dtype so fp16 models
+            # don't upcast every broadcast op that uses this constant.
+            _fdtype = self._dtype if self._dtype in (mx.float16, mx.float32) else mx.float32
             fval = _attr(node, "value_float", None)
             ival = _attr(node, "value_int", None)
             if fval is not None:
-                values[node.output[0]] = mx.array(fval, dtype=mx.float32)
+                values[node.output[0]] = mx.array(fval, dtype=_fdtype)
             elif ival is not None:
                 values[node.output[0]] = mx.array(ival, dtype=mx.int32)
 

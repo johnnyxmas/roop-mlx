@@ -125,11 +125,16 @@ class FFMPEG_VideoWriter:
             cmd.extend(["-i", audiofile, "-acodec", "copy"])
 
         cmd.extend(["-vcodec", self.codec])
-        # VideoToolbox uses -q:v (higher = better); software encoders use -crf
+        # quality_pct is a 0-100 value where higher = better quality.
+        # VideoToolbox -q:v uses the same 0-100 scale directly.
+        # CRF (libx264/libx265/libvpx-vp9) uses 0-51 where LOWER is better,
+        # so we invert: quality 100 → CRF 0, quality 0 → CRF 51.
+        quality_pct = max(0, min(100, int(crf)))
         if is_videotoolbox_codec(self.codec):
-            cmd.extend(["-q:v", str(crf)])
+            cmd.extend(["-q:v", str(quality_pct)])
         else:
-            cmd.extend(["-crf", str(crf)])
+            crf_value = int((100 - quality_pct) * 51 / 100)
+            cmd.extend(["-crf", str(crf_value)])
         if ffmpeg_params is not None:
             cmd.extend(ffmpeg_params)
         if bitrate is not None:

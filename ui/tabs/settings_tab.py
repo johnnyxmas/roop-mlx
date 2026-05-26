@@ -128,7 +128,7 @@ def settings_tab():
                     0,
                     100,
                     value=roop.globals.CFG.video_quality,
-                    label="Video Quality",
+                    label="Video Quality (0=worst, 100=best)",
                     step=1.0,
                     interactive=True,
                 )

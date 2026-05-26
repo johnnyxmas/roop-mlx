@@ -54,13 +54,14 @@ def prepare_environment():
     roop.globals.output_path = os.path.abspath(os.path.join(os.getcwd(), "output"))
     os.makedirs(roop.globals.output_path, exist_ok=True)
     if not roop.globals.CFG.use_os_temp_folder:
-        os.environ["TEMP"] = os.environ["TMP"] = os.path.abspath(
-            os.path.join(os.getcwd(), "temp")
-        )
-    os.makedirs(os.environ["TEMP"], exist_ok=True)
-    os.environ["GRADIO_TEMP_DIR"] = os.environ["TEMP"]
+        app_temp = os.path.abspath(os.path.join(os.getcwd(), "temp"))
+        os.environ["TEMP"] = os.environ["TMP"] = os.environ["TMPDIR"] = app_temp
+    import tempfile
+    temp_dir = os.environ.get("TEMP") or os.environ.get("TMPDIR") or tempfile.gettempdir()
+    os.makedirs(temp_dir, exist_ok=True)
+    os.environ["GRADIO_TEMP_DIR"] = temp_dir
     os.environ["GRADIO_ANALYTICS_ENABLED"] = "0"
-    _purge_corrupt_temp_images(os.environ["TEMP"])
+    _purge_corrupt_temp_images(temp_dir)
 
 
 def run():

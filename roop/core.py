@@ -5,7 +5,6 @@ import sys
 import shutil
 
 import warnings
-import platform
 import signal
 import pathlib
 import argparse
@@ -24,15 +23,12 @@ from roop.ProcessOptions import ProcessOptions
 from roop.capturer import get_video_frame_total
 
 
-clip_text = None
-
 call_display_ui = None
 
 process_mgr = None
 
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="insightface")
-warnings.filterwarnings("ignore", category=UserWarning, module="torchvision")
 
 
 def parse_args() -> None:
@@ -54,33 +50,16 @@ def parse_args() -> None:
     roop.globals.frame_processors = ["face_swapper", "face_enhancer"]
 
 
-def suggest_max_memory() -> int:
-    # Apple Silicon ships with unified memory; 8 GB is a reasonable cap
-    # for the swap pipeline before the OS starts swapping aggressively.
-    return 8
-
-
 def suggest_execution_threads() -> int:
     return 4
 
 
-def limit_resources() -> None:
-    if roop.globals.max_memory and platform.system().lower() != "darwin":
-        import resource
-        memory = roop.globals.max_memory * 1024**3
-        resource.setrlimit(resource.RLIMIT_DATA, (memory, memory))
-
-
 def release_resources() -> None:
-    import gc
-
     global process_mgr
 
     if process_mgr is not None:
         process_mgr.release_resources()
         process_mgr = None
-
-    gc.collect()
 
 
 def pre_check() -> bool:
@@ -168,7 +147,6 @@ def batch_process_regular(
 ) -> None:
     global process_mgr
 
-    limit_resources()
     if process_mgr is None:
         process_mgr = ProcessMgr(progress)
     mask = imagemask["layers"][0] if imagemask is not None else None
@@ -198,7 +176,6 @@ def batch_process_regular(
 def batch_process_with_options(files: list[ProcessEntry], options, progress):
     global process_mgr
 
-    limit_resources()
     if process_mgr is None:
         process_mgr = ProcessMgr(progress)
     process_mgr.initialize(

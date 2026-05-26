@@ -61,12 +61,8 @@ def pick_queue(queue: Queue[str], queue_per_future: int) -> List[str]:
 
 
 class ProcessMgr:
-    input_face_datas = []
-    target_face_datas = []
-
     imagemask = None
 
-    processors = []
     options: ProcessOptions = None
 
     num_threads = 1
@@ -113,6 +109,9 @@ class ProcessMgr:
         self._thread_local = thread_local()
         # Kept for plumbing compatibility -- single-device on Apple Silicon.
         self.processors_by_gpu = []
+        self.processors = []
+        self.input_face_datas = []
+        self.target_face_datas = []
 
     def reuseOldProcessor(self, name: str):
         for p in self.processors:
@@ -127,7 +126,6 @@ class ProcessMgr:
         self.num_frames_no_face = 0
         self.last_swapped_frame = None
         self.options = options
-        # Reset all thread-local tracker state for new job
         self._thread_local = thread_local()
         devicename = get_device()
 
@@ -144,7 +142,6 @@ class ProcessMgr:
             self.input_face_datas = input_faces.copy()
             shuffle_array(self.input_face_datas)
 
-        # Clean up processors that are no longer needed
         processors_to_remove = []
         for p in self.processors:
             newp = next(
@@ -153,8 +150,6 @@ class ProcessMgr:
             if newp is None:
                 p.Release()
                 processors_to_remove.append(p)
-        
-        # Remove processors from list after iteration
         for p in processors_to_remove:
             self.processors.remove(p)
             del p
@@ -184,7 +179,6 @@ class ProcessMgr:
             and len(self.options.imagemask["layers"]) > 0
         ):
             self.options.imagemask = self.options.imagemask.get("layers")[0]
-            # Get rid of alpha
             self.options.imagemask = cv2.cvtColor(
                 self.options.imagemask, cv2.COLOR_RGBA2GRAY
             )
@@ -217,21 +211,10 @@ class ProcessMgr:
         return self.INSIGHTFACE_MODEL_FILES.get(swap_modelname, swap_modelname)
 
     def run_batch(self, source_files, target_files, threads: int = 1):
-        import gc
-        import roop.globals
-        
         progress_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]"
         self.total_frames = len(source_files)
         self.num_threads = threads
-        
-        # Force garbage collection before starting
-        gc.collect()
-        
-        # Determine garbage collection frequency based on memory limit
-        max_memory_gb = roop.globals.max_memory if roop.globals.max_memory else 16
-        # More frequent GC for lower memory limits
-        gc_frequency = max(5, min(20, int(max_memory_gb / 2)))
-        
+
         with tqdm(
             total=self.total_frames,
             desc="Processing",
@@ -260,9 +243,6 @@ class ProcessMgr:
                 for future in as_completed(futures):
                     future.result()
                     completed_count += 1
-                    # Periodic garbage collection based on memory settings
-                    if completed_count % gc_frequency == 0:
-                        gc.collect()
 
     def process_frames(
         self,
@@ -274,34 +254,29 @@ class ProcessMgr:
     ) -> None:
         if self.processors_by_gpu and gpu_index < len(self.processors_by_gpu):
             self._thread_local.processors = self.processors_by_gpu[gpu_index]
+        _processors = getattr(self._thread_local, 'processors', self.processors)
+        file_to_idx = {f: i for i, f in enumerate(source_files)}
         for f in current_files:
             if not roop.globals.processing:
                 return
 
-            # Decode the byte array into an OpenCV image
             temp_frame = cv2.imdecode(np.fromfile(f, dtype=np.uint8), cv2.IMREAD_COLOR)
             if temp_frame is not None:
                 try:
                     if self.options.frame_processing:
                         frame = temp_frame
-                        for p in getattr(self._thread_local, 'processors', self.processors):
+                        for p in _processors:
                             frame = p.Run(frame)
                         resimg = frame
                     else:
                         resimg = self.process_frame(temp_frame)
-                    
+
                     if resimg is not None:
-                        i = source_files.index(f)
-                        # Encode and write file
                         success, encoded = cv2.imencode(f".{roop.globals.CFG.output_image_format}", resimg)
                         if success:
-                            encoded.tofile(target_files[i])
-                        # Immediate cleanup of result image
-                        del resimg
-                        if 'encoded' in locals():
-                            del encoded
+                            encoded.tofile(target_files[file_to_idx[f]])
+                        del resimg, encoded
                 finally:
-                    # Always cleanup input frame
                     del temp_frame
             if update:
                 update()
@@ -328,6 +303,7 @@ class ProcessMgr:
     def process_videoframes(self, threadindex, progress) -> None:
         if self.processors_by_gpu:
             self._thread_local.processors = self.processors_by_gpu[threadindex % len(self.processors_by_gpu)]
+        _processors = getattr(self._thread_local, 'processors', self.processors)
         while True:
             frame = self.frames_queue[threadindex].get()
             if frame is None:
@@ -339,7 +315,7 @@ class ProcessMgr:
                 try:
                     if self.options.frame_processing:
                         processed_frame = frame
-                        for p in getattr(self._thread_local, 'processors', self.processors):
+                        for p in _processors:
                             processed_frame = p.Run(processed_frame)
                         resimg = processed_frame
                     else:
@@ -369,7 +345,6 @@ class ProcessMgr:
                         self.streamwriter.WriteToStream(frame)
                 except (IOError, OSError, BrokenPipeError) as e:
                     print(f"Error writing frame: {e}")
-                    # Stop processing on write error to prevent further issues
                     import roop.globals
                     roop.globals.processing = False
                     return
@@ -468,7 +443,6 @@ class ProcessMgr:
 
                 for future in as_completed(futures):
                     future.result()
-        # wait for the task to complete
         readthread.join()
         writethread.join()
         cap.release()
@@ -487,11 +461,9 @@ class ProcessMgr:
         self.processed_queue.clear()
 
     _last_progress_time: float = 0.0
-    _last_gc_time: float = 0.0
     _pending_frames: int = 0
     _psutil_process = None
-    _PROGRESS_INTERVAL: float = 5.0   # seconds between full progress updates
-    _GC_COOLDOWN: float = 60.0        # seconds between gc.collect() calls
+    _PROGRESS_INTERVAL: float = 5.0   # seconds between progress updates
 
     def update_progress(self, progress: Any = None) -> None:
         self._pending_frames += 1
@@ -505,34 +477,28 @@ class ProcessMgr:
         self._last_progress_time = now
 
         import roop.globals
-        import gc
 
-        # Memory check
         if self._psutil_process is None:
             self._psutil_process = psutil.Process(os.getpid())
         memory_usage = self._psutil_process.memory_info().rss / 1024 / 1024 / 1024
-        max_memory_gb = roop.globals.max_memory if roop.globals.max_memory else 16
 
-        # On Apple Silicon RAM == VRAM (unified memory) -- nothing extra to query.
-        gpu_memory_info = ""
-
-        # Throttled GC -- at most once every _GC_COOLDOWN seconds
-        need_gc = memory_usage > max_memory_gb * 0.9
-        if need_gc and (now - self._last_gc_time) >= self._GC_COOLDOWN:
-            self._last_gc_time = now
-            gc.collect()
-            print(f"Memory: {memory_usage:.2f}/{max_memory_gb}GB -- ran cleanup")
+        # Read the live config value (updates when the user moves the slider)
+        # rather than the startup snapshot in roop.globals.max_memory.
+        cfg_limit = getattr(roop.globals.CFG, "memory_limit", 0) if roop.globals.CFG else 0
+        if cfg_limit and cfg_limit > 0:
+            mem_label = f"{memory_usage:.1f}/{cfg_limit:.0f}GB"
+        else:
+            total_gb = psutil.virtual_memory().total / 1024 ** 3
+            mem_label = f"{memory_usage:.1f}/{total_gb:.0f}GB"
 
         progress.set_postfix(
             {
-                "memory_usage": "{:.2f}".format(memory_usage).zfill(5) + "GB" + gpu_memory_info,
-                "max_memory": f"{max_memory_gb}GB (RAM)",
-                "execution_threads": self.num_threads,
+                "mem": f"{memory_usage:.1f}/{mem_label}",
+                "threads": self.num_threads,
             }
         )
         progress.update(batch)
 
-        # Update global progress status for UI
         current_frame = progress.n
         elapsed = now - roop.globals.progress_status["start_time"]
         fps = current_frame / elapsed if elapsed > 0 else 0
@@ -739,7 +705,6 @@ class ProcessMgr:
                     num_targetfaces = len(self.target_face_datas)
                     use_index = num_targetfaces == 1
                     
-                    # Pre-compute embeddings for efficiency
                     target_embeddings = [tf.embedding for tf in self.target_face_datas]
                     
                     for i, target_embedding in enumerate(target_embeddings):
@@ -782,7 +747,6 @@ class ProcessMgr:
                             )
 
             finally:
-                # Clean up faces regardless of what happens
                 for face in faces:
                     del face
                 faces.clear()
@@ -794,7 +758,6 @@ class ProcessMgr:
         if num_faces_found == 0:
             return num_faces_found, frame
 
-        # Apply image mask if present
         if (
             self.options.imagemask is not None
             and self.options.imagemask.shape == frame.shape
@@ -846,10 +809,8 @@ class ProcessMgr:
         rotation_action = self.rotation_action(original_face, frame)
 
         if rotation_action == "rotate_anticlockwise":
-            # face is horizontal, rotating frame anti-clockwise and getting face bounding box from rotated frame
             frame = rotate_anticlockwise(frame)
         elif rotation_action == "rotate_clockwise":
-            # face is horizontal, rotating frame clockwise and getting face bounding box from rotated frame
             frame = rotate_clockwise(frame)
 
         return target_face, frame, rotation_action
@@ -873,7 +834,6 @@ class ProcessMgr:
 
         rotation_action = None
         if roop.globals.autorotate_faces:
-            # check for sideways rotation of face
             rotation_action = self.rotation_action(target_face, frame)
             if rotation_action is not None:
                 (startX, startY, endX, endY) = target_face["bbox"].astype("int")
@@ -896,27 +856,6 @@ class ProcessMgr:
                     frame = rotcutframe
                     target_face = rotface
 
-        # if roop.globals.vr_mode:
-        # bbox = target_face.bbox
-        # [orig_width, orig_height, _] = frame.shape
-
-        # # Convert bounding box to ints
-        # x1, y1, x2, y2 = map(int, bbox)
-
-        # # Determine the center of the bounding box
-        # x_center = (x1 + x2) / 2
-        # y_center = (y1 + y2) / 2
-
-        # # Normalize coordinates to range [-1, 1]
-        # x_center_normalized = x_center / (orig_width / 2) - 1
-        # y_center_normalized = y_center / (orig_width / 2) - 1
-
-        # # Convert normalized coordinates to spherical (theta, phi)
-        # theta = x_center_normalized * 180  # Theta ranges from -180 to 180 degrees
-        # phi = -y_center_normalized * 90  # Phi ranges from -90 to 90 degrees
-
-        # img = vr.GetPerspective(frame, 90, theta, phi, 1280, 1280)  # Generate perspective image
-
         """ Code ported/adapted from Facefusion which borrowed the idea from Rope:
             Kind of subsampling the cutout and aligned face image and faceswapping slices of it up to
             the desired output resolution. This works around the current resolution limitations without using enhancers.
@@ -929,7 +868,8 @@ class ProcessMgr:
         fake_frame = aligned_img
         target_face.matrix = M
 
-        for p in getattr(self._thread_local, 'processors', self.processors):
+        _processors = getattr(self._thread_local, 'processors', self.processors)
+        for p in _processors:
             if p.type == "swap":
                 # FF models (ghost/hyperswap/uniface) need the full FaceSet for
                 # access to ref_images (UniFace) and their own embedding pipeline.
@@ -967,7 +907,7 @@ class ProcessMgr:
                 )
 
         upscale = 512
-        for p in getattr(self._thread_local, 'processors', self.processors):
+        for p in _processors:
             if hasattr(p, 'input_resolution'):
                 upscale = p.input_resolution
                 break
@@ -1031,7 +971,6 @@ class ProcessMgr:
         return dest
 
     def simple_blend_with_mask(self, image1, image2, mask):
-        # Blend the images
         blended_image = (
             image1.astype(np.float32) * (1.0 - mask) + image2.astype(np.float32) * mask
         )
@@ -1046,7 +985,6 @@ class ProcessMgr:
         face_matte = np.full(
             (target_img.shape[0], target_img.shape[1]), 255, dtype=np.uint8
         )
-        # Generate white square sized as a upsk_face
         img_matte = np.zeros((upsk_face.shape[0], upsk_face.shape[1]), dtype=np.uint8)
 
         w = img_matte.shape[1]
@@ -1058,7 +996,6 @@ class ProcessMgr:
         right = int(w - (mask_offsets[3] * w))
         img_matte[top:bottom, left:right] = 255
 
-        # Transform white square back to target_img
         img_matte = cv2.warpAffine(
             img_matte,
             IM,
@@ -1066,22 +1003,18 @@ class ProcessMgr:
             flags=cv2.INTER_NEAREST,
             borderValue=0.0,
         )
-        ##Blacken the edges of face_matte by 1 pixels (so the mask in not expanded on the image edges)
+        # blacken 1-pixel border so the mask doesn't bleed to image edges
         img_matte[:1, :] = img_matte[-1:, :] = img_matte[:, :1] = img_matte[:, -1:] = 0
 
         img_matte = self.blur_area(img_matte, mask_offsets[4], mask_offsets[5])
-        # Normalize images to float values and reshape
         img_matte = img_matte.astype(np.float32) / 255
         face_matte = face_matte.astype(np.float32) / 255
         img_matte = np.minimum(face_matte, img_matte)
         if self.options.show_face_area_overlay:
-            # Additional steps for green overlay
             green_overlay = np.zeros_like(target_img)
             green_color = [0, 255, 0]  # RGB for green
-            for i in range(3):  # Apply green color where img_matte is not zero
-                green_overlay[:, :, i] = np.where(
-                    img_matte > 0, green_color[i], 0
-                )  ##Transform upcaled face back to target_img
+            for i in range(3):
+                green_overlay[:, :, i] = np.where(img_matte > 0, green_color[i], 0)
         img_matte = np.reshape(img_matte, [img_matte.shape[0], img_matte.shape[1], 1])
         paste_face = cv2.warpAffine(
             upsk_face,
@@ -1104,20 +1037,16 @@ class ProcessMgr:
                 0,
             )
 
-        # Re-assemble image
         paste_face = img_matte * paste_face
         paste_face = paste_face + (1 - img_matte) * target_img.astype(np.float32)
         if self.options.show_face_area_overlay:
-            # Overlay the green overlay on the final image
             paste_face = cv2.addWeighted(
                 paste_face.astype(np.uint8), 1 - 0.5, green_overlay, 0.5, 0
             )
         return paste_face.astype(np.uint8)
 
     def blur_area(self, img_matte, num_erosion_iterations, blur_amount):
-        # Detect the affine transformed white area
         mask_h_inds, mask_w_inds = np.where(img_matte == 255)
-        # Calculate the size (and diagonal size) of transformed white area width and height boundaries
         mask_h = np.max(mask_h_inds) - np.min(mask_h_inds)
         mask_w = np.max(mask_w_inds) - np.min(mask_w_inds)
         mask_size = int(np.sqrt(mask_h * mask_w))
@@ -1207,10 +1136,8 @@ class ProcessMgr:
         final_frame = final_frame.transpose(2, 0, 3, 1, 4).reshape(
             pixel_boost_size, pixel_boost_size, 3
         )
-        # Create a copy and cleanup intermediate arrays
         result = final_frame.copy()
         del final_frame
-        # Clear the input subsample frames
         for frame in subsample_frame:
             del frame
         subsample_frame.clear()
@@ -1237,18 +1164,13 @@ class ProcessMgr:
 
         landmarks = face.landmark_2d_106
         if landmarks is not None:
-            # Get mouth landmarks (indices 52 to 71 typically represent the outer mouth)
-            mouth_points = landmarks[52:71].astype(np.int32)
-
-            # Add padding to mouth area
+            mouth_points = landmarks[52:71].astype(np.int32)  # outer mouth
             min_x, min_y = np.min(mouth_points, axis=0)
             max_x, max_y = np.max(mouth_points, axis=0)
             min_x = max(0, min_x - (15 * 6))
             min_y = max(0, min_y - 22)
             max_x = min(frame.shape[1], max_x + (15 * 6))
             max_y = min(frame.shape[0], max_y + (90 * 6))
-
-            # Extract the mouth area from the frame using the calculated bounding box
             mouth_cutout = frame[min_y:max_y, min_x:max_x].copy()
 
         return mouth_cutout, (min_x, min_y, max_x, max_y)
@@ -1283,30 +1205,16 @@ class ProcessMgr:
             return frame
         try:
             resized_mouth_cutout = cv2.resize(mouth_cutout, (box_width, box_height))
-
-            # Extract the region of interest (ROI) from the target frame
             roi = frame[min_y:max_y, min_x:max_x]
-
-            # Ensure the ROI and resized_mouth_cutout have the same shape
             if roi.shape != resized_mouth_cutout.shape:
                 resized_mouth_cutout = cv2.resize(
                     resized_mouth_cutout, (roi.shape[1], roi.shape[0])
                 )
-
-            # Apply color transfer from ROI to mouth cutout
             color_corrected_mouth = self.apply_color_transfer(resized_mouth_cutout, roi)
-
-            # Create a feathered mask with increased feather amount
             feather_amount = min(30, box_width // 15, box_height // 15)
-            mask = self.create_feathered_mask(
-                resized_mouth_cutout.shape, feather_amount
-            )
-
-            # Blend the color-corrected mouth cutout with the ROI using the feathered mask
-            mask = mask[:, :, np.newaxis]  # Add channel dimension to mask
+            mask = self.create_feathered_mask(resized_mouth_cutout.shape, feather_amount)
+            mask = mask[:, :, np.newaxis]
             blended = (color_corrected_mouth * mask + roi * (1 - mask)).astype(np.uint8)
-
-            # Place the blended result back into the frame
             frame[min_y:max_y, min_x:max_x] = blended
         except Exception as e:
             print(f"Error {e}")
@@ -1324,13 +1232,10 @@ class ProcessMgr:
         source_mean, source_std = cv2.meanStdDev(source)
         target_mean, target_std = cv2.meanStdDev(target)
 
-        # Reshape mean and std to be broadcastable
         source_mean = source_mean.reshape(1, 1, 3)
         source_std = source_std.reshape(1, 1, 3)
         target_mean = target_mean.reshape(1, 1, 3)
         target_std = target_std.reshape(1, 1, 3)
-
-        # Perform the color transfer
         source = (source - source_mean) * (target_std / source_std) + target_mean
         return cv2.cvtColor(np.clip(source, 0, 255).astype("uint8"), cv2.COLOR_LAB2BGR)
 
@@ -1338,11 +1243,9 @@ class ProcessMgr:
         pass
 
     def release_resources(self):
-        import gc
         import tempfile
         import shutil
         
-        # Release all GPU processor sets
         released = set()
         for gpu_processors in self.processors_by_gpu:
             for p in gpu_processors:
@@ -1351,49 +1254,35 @@ class ProcessMgr:
                     released.add(id(p))
         self.processors_by_gpu.clear()
         self.processors.clear()
-        
-        # Close video/stream writers
         if self.videowriter is not None:
             self.videowriter.close()
             self.videowriter = None
         if self.streamwriter is not None:
             self.streamwriter.Close()
             self.streamwriter = None
-            
-        # Clear queues and arrays
         if hasattr(self, 'frames_queue') and self.frames_queue:
             self.frames_queue.clear()
             self.frames_queue = None
         if hasattr(self, 'processed_queue') and self.processed_queue:
             self.processed_queue.clear()
             self.processed_queue = None
-            
-        # Clear face data
         if hasattr(self, 'input_face_datas'):
             self.input_face_datas.clear()
         if hasattr(self, 'target_face_datas'):
             self.target_face_datas.clear()
-            
-        # Clear last swapped frame
         if hasattr(self, 'last_swapped_frame') and self.last_swapped_frame is not None:
             del self.last_swapped_frame
             self.last_swapped_frame = None
-            
-        # Clean up any remaining temp files from processing
         try:
             tempfolder = os.path.join(tempfile.gettempdir(), "rooptmp")
             if os.path.exists(tempfolder):
                 shutil.rmtree(tempfolder)
         except Exception as e:
             print(f"Warning: Could not clean temp folder during release: {e}")
-            
-        # Force garbage collection
-        gc.collect()
 
     def _cleanup_gpu_memory(self):
-        """Apple Silicon uses unified memory -- gc.collect() is enough."""
-        import gc
-        gc.collect()
+        """No-op on Apple Silicon (unified memory; MLX manages its own buffers)."""
+        return None
 
     def _cleanup_gpu_memory_light(self):
         """No-op on Apple Silicon (unified memory)."""

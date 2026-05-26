@@ -1,6 +1,9 @@
 import threading
 import time
-import pyvirtualcam
+try:
+    import pyvirtualcam
+except ImportError:
+    pyvirtualcam = None
 
 
 class StreamWriter:

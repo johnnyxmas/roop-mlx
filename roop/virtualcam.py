@@ -1,7 +1,10 @@
 import cv2
 import roop.globals
 import ui.globals
-import pyvirtualcam
+try:
+    import pyvirtualcam
+except ImportError:
+    pyvirtualcam = None
 import threading
 import platform
 

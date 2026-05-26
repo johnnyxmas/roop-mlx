@@ -317,7 +317,7 @@ def open_with_default_app(filename: str):
     elif platform == "wsl":
         subprocess.call("cmd.exe /C start".split() + [filename])
     else:  # linux variants
-        subprocess.call("xdg-open", filename)
+        subprocess.call(["xdg-open", filename])
 
 
 def prepare_for_batch(target_files) -> str:

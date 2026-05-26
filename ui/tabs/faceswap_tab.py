@@ -24,6 +24,7 @@ def _fpath(f) -> str:
 
 IS_INPUT = True
 SELECTED_FACE_INDEX = 0
+SELECTION_FACES_DATA = []
 
 SELECTED_INPUT_FACE_INDEX = 0
 SELECTED_TARGET_FACE_INDEX = 0
@@ -691,9 +692,10 @@ def on_add_local_folder(folder):
 
 
 def on_srcfile_changed(srcfiles, progress=gr.Progress()):
-    global SELECTION_FACES_DATA, IS_INPUT
+    global SELECTION_FACES_DATA, IS_INPUT, SELECTED_FACE_INDEX
 
     IS_INPUT = True
+    SELECTED_FACE_INDEX = 0
 
     if srcfiles is None or len(srcfiles) < 1:
         return gr.Column(visible=False), None, ui.globals.ui_input_thumbs, None
@@ -702,7 +704,8 @@ def on_srcfile_changed(srcfiles, progress=gr.Progress()):
         source_path = _fpath(f)
         if source_path.lower().endswith("fsz"):
             progress(0, desc="Retrieving faces from Faceset File")
-            unzipfolder = os.path.join(os.environ["TEMP"], "faceset")
+            import tempfile
+            unzipfolder = os.path.join(os.environ.get("TEMP") or os.environ.get("TMPDIR") or tempfile.gettempdir(), "faceset")
             if os.path.isdir(unzipfolder):
                 files = os.listdir(unzipfolder)
                 for file in files:
@@ -817,9 +820,10 @@ def remove_selected_target_face():
 
 
 def on_use_face_from_selected(files, frame_num):
-    global IS_INPUT, SELECTION_FACES_DATA
+    global IS_INPUT, SELECTION_FACES_DATA, SELECTED_FACE_INDEX
 
     IS_INPUT = False
+    SELECTED_FACE_INDEX = 0
     thumbs = []
 
     roop.globals.target_path = _fpath(files[selected_preview_index])
@@ -877,6 +881,8 @@ def on_select_face(evt: gr.SelectData):  # SelectData is a subclass of EventData
 
 
 def on_selected_face():
+    if not SELECTION_FACES_DATA or SELECTED_FACE_INDEX >= len(SELECTION_FACES_DATA):
+        return ui.globals.ui_input_thumbs, ui.globals.ui_target_thumbs, gr.Gallery(visible=True)
     fd = SELECTION_FACES_DATA[SELECTED_FACE_INDEX]
     image = util.convert_to_gradio(fd[1])
     if IS_INPUT:

@@ -30,7 +30,7 @@ class Settings:
         self.output_video_codec = self.default_get(
             data, "output_video_codec", "auto"
         )
-        self.video_quality = self.default_get(data, "video_quality", 14)
+        self.video_quality = self.default_get(data, "video_quality", 70)
         self.clear_output = self.default_get(data, "clear_output", True)
         self.max_threads = self.default_get(data, "max_threads", 2)
         self.memory_limit = self.default_get(data, "memory_limit", 0)
@@ -57,6 +57,7 @@ class Settings:
             "output_template": self.output_template,
             "use_os_temp_folder": self.use_os_temp_folder,
             "output_show_video": self.output_show_video,
+            "launch_browser": self.launch_browser,
         }
         with open(self.config_file, "w") as f:
             yaml.dump(data, f)

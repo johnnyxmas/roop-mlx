@@ -12,8 +12,8 @@ current_capture = None
 def get_image_frame(filename: str):
     try:
         return cv2.imdecode(np.fromfile(filename, dtype=np.uint8), cv2.IMREAD_COLOR)
-    except:
-        print(f"Exception reading {filename}")
+    except Exception as e:
+        print(f"Exception reading {filename}: {e}")
     return None
 
 
@@ -29,8 +29,6 @@ def _open_capture(video_path: str):
 
 
 def get_video_frame(video_path: str, frame_number: int = 0) -> Optional[Frame]:
-    global current_video_path, current_capture, current_frame_total
-
     if video_path != current_video_path:
         _open_capture(video_path)
 

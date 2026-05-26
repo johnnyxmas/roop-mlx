@@ -114,7 +114,8 @@ def on_faceset_changed(faceset, progress=gr.Progress()) -> List[Frame]:
             0,
             desc="Retrieving faces from Faceset File",
         )
-        unzipfolder = os.path.join(os.environ["TEMP"], "faceset")
+        import tempfile
+        unzipfolder = os.path.join(os.environ.get("TEMP") or os.environ.get("TMPDIR") or tempfile.gettempdir(), "faceset")
         if os.path.isdir(unzipfolder):
             shutil.rmtree(unzipfolder)
         util.mkdir_with_umask(unzipfolder)
