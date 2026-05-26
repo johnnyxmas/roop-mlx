@@ -1,0 +1,61 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "model": "openai-compatible/qwen36-aeon",
+  "provider": {
+    "openai-compatible": {
+      "options": {
+        "baseURL": "http://127.0.0.1:8080/v1",
+        "timeout": 600000
+      },
+      "models": {
+        "qwen36-aeon": {
+          "id": "mlx-community/Qwen3.6-27B-AEON-Ultimate-Uncensored-BF16-mlx-4Bit",
+          "name": "Qwen3.6 27B AEON (local)",
+          "tool_call": true,
+          "temperature": true,
+          "limit": {
+            "context": 262144,
+            "output": 32000
+          }
+        }
+          "qwen35-claude": {
+          "id": "mlx-community/Huihui-Qwen3.5-27B-Claude-4.6-Opus-abliterated-4bit",
+          "name": "Qwen3.5 27B Claude (local)",
+          "tool_call": true,
+          "temperature": true,
+          "limit": {
+            "context": 262144,
+            "output": 32000
+          }
+        }
+          "gemma-IT": {
+          "id": "mlx-community/gemma-4-26B-A4B-it-OptiQ-4bit",
+          "name": "Gemma 4 26B A4B IT (local)",
+          "tool_call": true,
+          "temperature": true,
+          "limit": {
+            "context": 262144,
+            "output": 32000
+          }
+        }
+      }
+    }
+  }
+}
+
+  // Per-agent overrides. Properties merge rather than replace, so each
+  // block only needs to state what differs from the built-in defaults.
+  "agent": {
+    // Long-form story / document writing.
+    "write": {
+      "model": "mlx-lm/qwen36-aeon",
+      "temperature": 0.7
+    },
+
+    // Keep coding deterministic on the same local model.
+    "code": {
+      "model": "mlx-lm/qwen36-aeon",
+      "temperature": 0.2
+    }
+  }
+}

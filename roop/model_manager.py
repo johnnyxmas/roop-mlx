@@ -40,8 +40,7 @@ ALL_MODELS = [
      ["https://huggingface.co/facefusion/models-3.0.0/resolve/main/gpen_bfr_2048.onnx"]),
     ("", "restoreformer_plus_plus.onnx",
      ["https://huggingface.co/countfloyd/deepfake/resolve/main/restoreformer_plus_plus.onnx"]),
-    ("", "DMDNet.pth",
-     ["https://github.com/csxmli2016/DMDNet/releases/download/v1/DMDNet.pth"]),
+
     ("CodeFormer", "CodeFormerv0.1.onnx",
      ["https://huggingface.co/countfloyd/deepfake/resolve/main/CodeFormerv0.1.onnx"]),
 
