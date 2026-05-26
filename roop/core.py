@@ -65,12 +65,9 @@ def suggest_execution_threads() -> int:
 
 
 def limit_resources() -> None:
-    if roop.globals.max_memory:
-        memory = roop.globals.max_memory * 1024**3
-        if platform.system().lower() == "darwin":
-            memory = roop.globals.max_memory * 1024**6
+    if roop.globals.max_memory and platform.system().lower() != "darwin":
         import resource
-
+        memory = roop.globals.max_memory * 1024**3
         resource.setrlimit(resource.RLIMIT_DATA, (memory, memory))
 
 
