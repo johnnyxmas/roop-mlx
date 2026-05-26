@@ -306,7 +306,7 @@ def faceswap_tab():
                     [
                         "None",
                         "Codeformer",
-                        "DMDNet",
+
                         "GFPGAN",
                         "GPEN 512",
                         "GPEN 1024",

@@ -115,6 +115,10 @@ class Enhance_DMDNet:
         out = np.clip(out * 255.0, 0, 255).astype(np.uint8)
         result = cv2.cvtColor(out, cv2.COLOR_RGB2BGR)           # HWC BGR
 
+        # Remove the ~12px periodic grid from the dilated encoder via median filter.
+        # Median filter kills regular grid patterns while preserving edges/detail.
+        result = cv2.medianBlur(result, 5)
+
         return result, scale_factor
 
     def Release(self):

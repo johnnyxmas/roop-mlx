@@ -128,8 +128,7 @@ def get_processing_plugins(masking_engine, swap_model=None):
         processors.update({"gfpgan": {}})
     elif roop.globals.selected_enhancer == "Codeformer":
         processors.update({"codeformer": {}})
-    elif roop.globals.selected_enhancer == "DMDNet":
-        processors.update({"dmdnet": {}})
+
     elif roop.globals.selected_enhancer in ("GPEN", "GPEN 512", "GPEN 1024", "GPEN 2048"):
         parts = roop.globals.selected_enhancer.split()
         res = int(parts[-1]) if len(parts) > 1 else 512

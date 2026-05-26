@@ -98,7 +98,7 @@ class ProcessMgr:
         "mask_xseg": "Mask_XSeg",
         "codeformer": "Enhance_CodeFormer",
         "gfpgan": "Enhance_GFPGAN",
-        "dmdnet": "Enhance_DMDNet",
+
         "gpen": "Enhance_GPEN",
         "restoreformer++": "Enhance_RestoreFormerPPlus",
         "colorizer": "Frame_Colorizer",
@@ -626,9 +626,7 @@ class ProcessMgr:
             return True
         if roop.globals.autorotate_faces:
             return True
-        for p in self.processors:
-            if p.processorname == "dmdnet":
-                return True
+
         return False
 
     def _detect_faces_with_tracker(self, frame):
