@@ -1,33 +1,22 @@
-# roop-floyd-mlx
+# roop-mlx
 
-> **MLX fork — work in progress.** This branch hard-forks roop-floyd to
-> drop ONNX Runtime / CUDA / TensorRT / DirectML / ROCm and run every
-> model on [MLX](https://github.com/ml-explore/mlx) for Apple Silicon.
-> The app does **not** currently produce swaps end-to-end — every model
-> processor and the face detector raise `NotImplementedError` pending
-> their MLX port. The plugin/runtime scaffolding, Gradio UI, ffmpeg
-> pipeline, and face alignment helpers are intact and being reused.
->
-> Apple Silicon (arm64 macOS) only. See [CLAUDE.md](CLAUDE.md) for the
-> porting checklist.
-
-Face swap images and video without training, powered by a browser-based GUI.
+Face swap images and video without training, powered by Apple MLX and a browser-based GUI.
+Apple Silicon (arm64 macOS) only.
 
 [Installation](#installation) • [Usage](#usage) • [Changelog](CHANGELOG.md)
 
 > On first run, models (~2 GB) are downloaded automatically to `models/`.
-> They are kept around so the MLX port can pull weights out of them.
 
 ---
 
-## Features (upstream — porting in progress on this branch)
+## Features
 
 - Browser-based GUI
 - Multiple face swapping modes: first detected, by selection, by gender, random, all input faces
 - ReSwapper model option (128px & 256px) alongside InsightFace inswapper
 - Batch processing of images and video
-- Face occlusion masking via text prompts (CLIP) or XSeg
-- Face enhancers: GFPGAN, CodeFormer, DMDNet, GPEN (512/1024/2048px), RestoreFormer++
+- Face occlusion masking via XSeg
+- Face enhancers: GFPGAN, CodeFormer, GPEN (512/1024/2048px), RestoreFormer++
 - Subsample upscaling for higher resolution swaps
 - Frame processors: colorizer, upscaler, filters, background removal
 - Live webcam face swap with virtual camera output
@@ -69,11 +58,8 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-That's it -- no provider flags, no CUDA wheels, no TensorRT to build.
-The `mlx` and `mlx-nn` packages will pull arm64 wheels.
-
-> Intel Macs, Windows, and Linux are not supported on this branch. See
-> the [upstream `main` branch](../../tree/main) for those platforms.
+No provider flags, no CUDA wheels, no TensorRT to build.
+The `mlx` and `mlx-nn` packages pull arm64 wheels automatically.
 
 ---
 
@@ -149,7 +135,6 @@ Built on ideas, code, and models from:
 - [Rope](https://github.com/Hillobar/Rope)
 - [GFPGAN](https://github.com/TencentARC/GFPGAN)
 - [CodeFormer](https://github.com/kadirnar/codeformer-pip)
-- [DMDNet](https://github.com/csxmli2016/DMDNet)
 - [ReSwapper](https://github.com/somanchiu/ReSwapper)
 - [stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui)
 
