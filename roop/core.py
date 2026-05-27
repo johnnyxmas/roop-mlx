@@ -51,7 +51,7 @@ def parse_args() -> None:
 
 
 def suggest_execution_threads() -> int:
-    return 4
+    return 1
 
 
 def release_resources() -> None:

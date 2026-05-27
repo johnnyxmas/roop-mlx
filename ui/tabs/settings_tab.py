@@ -79,14 +79,6 @@ def settings_tab():
                     elem_id="default_det_size",
                     interactive=True,
                 )
-                max_threads = gr.Slider(
-                    1,
-                    32,
-                    value=roop.globals.CFG.max_threads,
-                    label="Max. Number of Threads",
-                    step=1.0,
-                    interactive=True,
-                )
             with gr.Column():
                 memory_limit = gr.Slider(
                     0,
@@ -160,10 +152,6 @@ def settings_tab():
 
     for s in settings_controls:
         s.select(fn=on_settings_changed)
-    max_threads.input(
-        fn=lambda a, b="max_threads": on_settings_changed_misc(a, b),
-        inputs=[max_threads],
-    )
     memory_limit.input(
         fn=lambda a, b="memory_limit": on_settings_changed_misc(a, b),
         inputs=[memory_limit],

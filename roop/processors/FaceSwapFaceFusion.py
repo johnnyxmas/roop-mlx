@@ -68,7 +68,8 @@ class FaceSwapFaceFusion:
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"HyperSwap model not found: {model_path}")
 
-        self._session = OnnxMLXSession(model_path)
+        import mlx.core as mx
+        self._session = OnnxMLXSession(model_path, dtype=mx.float16)
         self._output_name = self._session.get_outputs()[0].name
 
     def Run(self, source_faceset, target_face: Face, temp_frame: Frame) -> Frame:

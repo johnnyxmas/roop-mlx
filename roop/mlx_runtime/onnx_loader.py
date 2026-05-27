@@ -111,7 +111,9 @@ class OnnxMLXSession:
 
     # Ops heavy enough that we force mx.eval() on their output to keep the
     # lazy computation graph small and avoid OOM on large models.
-    _EVAL_AFTER = frozenset({"Gemm", "MatMul"})
+    # Disabled for small models (< 500 nodes) where the full lazy graph
+    # fits comfortably and single-shot eval is faster.
+    _EVAL_AFTER_OPS = frozenset({"Gemm", "MatMul"})
 
     # Metal memory limits are set once per process, not per session.
     _metal_configured: bool = False
@@ -294,6 +296,9 @@ class OnnxMLXSession:
             "ReduceL2":           self._op_reduce_l2,
         }
 
+        n_nodes = sum(1 for n in graph.node if n.op_type != "Constant")
+        self._eval_after = self._EVAL_AFTER_OPS if n_nodes >= 800 else frozenset()
+
     def get_inputs(self) -> list[_NodeArg]:
         return self._inputs_meta
 
@@ -327,9 +332,6 @@ class OnnxMLXSession:
 
         for i, node in enumerate(self._graph.node):
             op = node.op_type
-            # Constant nodes were pre-computed at load time into self._weights
-            # (already present in values). Skip them to avoid redundant
-            # mx.array() allocation on every inference call.
             if op == "Constant":
                 continue
             handler = self._dispatch.get(op)
@@ -339,13 +341,11 @@ class OnnxMLXSession:
                 )
             handler(node, values)
 
-            # Force evaluation after heavy ops to keep the lazy graph small.
-            if op in self._EVAL_AFTER:
+            if op in self._eval_after:
                 for out_name in node.output:
                     if out_name and out_name in values:
                         mx.eval(values[out_name])
 
-            # Free activations whose last consumer just ran.
             for inp in node.input:
                 if (inp
                         and self._last_use.get(inp) == i
@@ -773,21 +773,35 @@ class OnnxMLXSession:
 
     @staticmethod
     def _mlx_resize(x_nhwc: mx.array, out_h: int, out_w: int, mode: str) -> mx.array:
-        """Resize [N,H,W,C] to [N,out_h,out_w,C].
+        """Resize [N,H,W,C] to [N,out_h,out_w,C] using pure MLX ops."""
+        _, h, w, _ = x_nhwc.shape
 
-        Uses scipy.ndimage.zoom which handles arbitrary channel counts,
-        unlike cv2 which is limited to ≤4 channels.
-        """
-        from scipy.ndimage import zoom
+        if mode != "linear":
+            y_idx = (mx.arange(out_h) * (h / out_h)).astype(mx.int32)
+            x_idx = (mx.arange(out_w) * (w / out_w)).astype(mx.int32)
+            return mx.take(mx.take(x_nhwc, mx.clip(y_idx, 0, h - 1), axis=1),
+                           mx.clip(x_idx, 0, w - 1), axis=2)
 
-        arr = np.array(x_nhwc)  # [N, H, W, C]
-        n, h, w, c = arr.shape
-        zh = out_h / h
-        zw = out_w / w
+        # Bilinear: half-pixel coordinate transform
+        y_src = (mx.arange(out_h, dtype=mx.float32) + 0.5) * (h / out_h) - 0.5
+        x_src = (mx.arange(out_w, dtype=mx.float32) + 0.5) * (w / out_w) - 0.5
+        y_src = mx.clip(y_src, 0.0, h - 1.0)
+        x_src = mx.clip(x_src, 0.0, w - 1.0)
 
-        order = 1 if mode == "linear" else 0  # bilinear vs nearest
-        out = zoom(arr, (1, zh, zw, 1), order=order, prefilter=False)
-        return mx.array(out.astype(arr.dtype))
+        y0 = mx.floor(y_src).astype(mx.int32)
+        x0 = mx.floor(x_src).astype(mx.int32)
+        y1 = mx.minimum(y0 + 1, h - 1)
+        x1 = mx.minimum(x0 + 1, w - 1)
+
+        fy = (y_src - y0.astype(mx.float32)).reshape(1, -1, 1, 1)
+        fx = (x_src - x0.astype(mx.float32)).reshape(1, 1, -1, 1)
+
+        tl = mx.take(mx.take(x_nhwc, y0, axis=1), x0, axis=2)
+        tr = mx.take(mx.take(x_nhwc, y0, axis=1), x1, axis=2)
+        bl = mx.take(mx.take(x_nhwc, y1, axis=1), x0, axis=2)
+        br = mx.take(mx.take(x_nhwc, y1, axis=1), x1, axis=2)
+
+        return tl * (1 - fy) * (1 - fx) + tr * (1 - fy) * fx + bl * fy * (1 - fx) + br * fy * fx
 
     def _op_pad(self, node, values):
         x = self._v(values, node.input[0])

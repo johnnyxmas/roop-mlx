@@ -8,8 +8,12 @@ the MLX runtime config once the port is further along.
 
 
 def detector_stride() -> int:
-    """Detection cadence for video pipelines (1 = every frame)."""
-    return 1
+    """Detection cadence for video pipelines.
+
+    Full detection runs every N frames; optical-flow tracking fills
+    the gaps.  Higher values are faster but may drift on fast motion.
+    """
+    return 5
 
 
 def scene_cut_threshold() -> float:

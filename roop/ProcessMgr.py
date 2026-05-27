@@ -390,8 +390,8 @@ class ProcessMgr:
         self.frames_queue = []
         self.processed_queue = []
         for _ in range(threads):
-            self.frames_queue.append(Queue(1))
-            self.processed_queue.append(Queue(1))
+            self.frames_queue.append(Queue(4))
+            self.processed_queue.append(Queue(4))
 
         self.output_to_file = output_method != "Virtual Camera"
         self.output_to_cam = (
@@ -665,16 +665,13 @@ class ProcessMgr:
         num_faces_found = 0
 
         if self.options.swap_mode == "first":
-            face = get_first_face(frame)
-
-            if face is None:
+            faces = self._detect_faces_with_tracker(frame)
+            if not faces:
                 return num_faces_found, frame
-
             num_faces_found += 1
             temp_frame = self.process_face(
-                self.options.selected_index, face, temp_frame
+                self.options.selected_index, faces[0], temp_frame
             )
-            del face
 
         else:
             faces = self._detect_faces_with_tracker(frame)
@@ -869,12 +866,8 @@ class ProcessMgr:
         _processors = getattr(self._thread_local, 'processors', self.processors)
         for p in _processors:
             if p.type == "swap":
-                # FF models (ghost/hyperswap/uniface) need the full FaceSet for
-                # access to ref_images (UniFace) and their own embedding pipeline.
-                # InsightFace models receive the individual face object as before.
                 if p.processorname == "faceswap_ff":
                     swap_source = self.input_face_datas[face_index] if len(self.input_face_datas) > 0 else inputface
-                    # Cache swap_type on options so prepare/normalize dispatch correctly
                     self.options._ff_swap_type = getattr(p, 'swap_type', 'ghost')
                 else:
                     swap_source = inputface

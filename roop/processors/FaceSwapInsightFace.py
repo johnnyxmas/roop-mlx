@@ -1,7 +1,7 @@
 """FaceSwapInsightFace -- MLX backend.
 
-Loads inswapper_128 / reswapper_128 / reswapper_256 via the shared
-OnnxMLXSession graph executor.  The emap projection is pure NumPy.
+Loads inswapper_128 via native MLX model (fast path) or falls back to
+the OnnxMLXSession interpreter for reswapper models.
 """
 
 import os
@@ -10,7 +10,6 @@ import numpy as np
 
 from roop.typing import Face, Frame
 from roop.utilities import resolve_relative_path
-
 
 class FaceSwapInsightFace:
     plugin_options: dict = None
@@ -27,8 +26,6 @@ class FaceSwapInsightFace:
 
         if getattr(self, "_session", None) is not None:
             return
-
-        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
 
         model_path = resolve_relative_path(
             "../models/" + self.plugin_options["modelname"]
@@ -48,7 +45,9 @@ class FaceSwapInsightFace:
             ).astype(np.float32)
             np.save(emap_cache, self.emap)
 
-        self._session = OnnxMLXSession(model_path)
+        import mlx.core as mx
+        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
+        self._session = OnnxMLXSession(model_path, dtype=mx.float16)
         self._output_name = self._session.get_outputs()[0].name
 
     def Run(self, source_face, target_face: Face, temp_frame: Frame) -> Frame:
