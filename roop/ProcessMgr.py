@@ -200,14 +200,12 @@ class ProcessMgr:
                 self.options.frame_processing = True
 
     INSIGHTFACE_MODEL_FILES = {
-        "InSwapper 128 (CPU)": "inswapper_128.onnx",
-        "InSwapper 128 FP16": "inswapper_128_fp16.onnx",
+        "InSwapper 128": "inswapper_128.onnx",
         "ReSwapper 128": "reswapper_128.onnx",
         "ReSwapper 256": "reswapper_256.onnx",
     }
 
     def _resolve_modelname(self, swap_modelname: str) -> str:
-        """Return the model filename or display name depending on processor type."""
         return self.INSIGHTFACE_MODEL_FILES.get(swap_modelname, swap_modelname)
 
     def run_batch(self, source_files, target_files, threads: int = 1):
