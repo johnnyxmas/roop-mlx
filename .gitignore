@@ -32,3 +32,5 @@ output/*
 
 # Test scratch files
 test_*
+
+.kilo
