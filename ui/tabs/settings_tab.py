@@ -34,12 +34,14 @@ def settings_tab():
                 themes = gr.Dropdown(
                     available_themes,
                     label="Theme",
+                    info="Color scheme for this interface. Cosmetic only; applies after restart.",
                     value=roop.globals.CFG.selected_theme,
                 )
             with gr.Column():
                 settings_controls.append(
                     gr.Checkbox(
                         label="Public Server",
+                        info="Create a shareable public link so others can reach this app. Leave off for local-only use.",
                         value=roop.globals.CFG.server_share,
                         elem_id="server_share",
                         interactive=True,
@@ -48,6 +50,7 @@ def settings_tab():
                 settings_controls.append(
                     gr.Checkbox(
                         label="Clear output folder before each run",
+                        info="Delete previous results before starting a new job so the output folder only holds the latest run.",
                         value=roop.globals.CFG.clear_output,
                         elem_id="clear_output",
                         interactive=True,
@@ -55,6 +58,7 @@ def settings_tab():
                 )
                 output_template = gr.Textbox(
                     label="Filename Output Template",
+                    info="Naming pattern for saved files. Placeholders: {file} = original name, {time} = timestamp.",
                     lines=1,
                     placeholder="{file}_{time}",
                     value=roop.globals.CFG.output_template,
@@ -62,12 +66,14 @@ def settings_tab():
             with gr.Column():
                 input_server_name = gr.Textbox(
                     label="Server Name",
+                    info="Network address to bind to. Blank = localhost (this Mac only). Use 0.0.0.0 to allow other devices on your network.",
                     lines=1,
                     value=roop.globals.CFG.server_name,
                 )
             with gr.Column():
                 input_server_port = gr.Number(
                     label="Server Port",
+                    info="Network port for the web interface. Leave at 0 to pick one automatically.",
                     precision=0,
                     value=roop.globals.CFG.server_port,
                 )
@@ -75,6 +81,7 @@ def settings_tab():
             with gr.Column():
                 chk_det_size = gr.Checkbox(
                     label="Use default Det-Size",
+                    info="Use the standard face-detection resolution (640×640). Leave on unless you need a different size.",
                     value=True,
                     elem_id="default_det_size",
                     interactive=True,
@@ -85,6 +92,7 @@ def settings_tab():
                     128,
                     value=roop.globals.CFG.memory_limit,
                     label="Max. Memory to use (Gb)",
+                    info="Upper limit on system RAM the app may use. 0 = no limit.",
                     step=1.0,
                     interactive=True,
                 )
@@ -92,6 +100,7 @@ def settings_tab():
                     gr.Dropdown(
                         image_formats,
                         label="Image Output Format",
+                        info="File type for saved images. jpg = smaller, png = lossless, webp = small with transparency.",
                         value=roop.globals.CFG.output_image_format,
                         elem_id="output_image_format",
                         interactive=True,
@@ -102,6 +111,7 @@ def settings_tab():
                     gr.Dropdown(
                         video_codecs,
                         label="Video Codec",
+                        info="How output video is compressed. 'auto' picks h264_videotoolbox if VideoToolbox is available, otherwise libx264.",
                         value=roop.globals.CFG.output_video_codec,
                         elem_id="output_video_codec",
                         interactive=True,
@@ -111,6 +121,7 @@ def settings_tab():
                     gr.Dropdown(
                         video_formats,
                         label="Video Output Format",
+                        info="Container/file type for saved video. mp4 is the most widely compatible.",
                         value=roop.globals.CFG.output_video_format,
                         elem_id="output_video_format",
                         interactive=True,
@@ -121,6 +132,7 @@ def settings_tab():
                     100,
                     value=roop.globals.CFG.video_quality,
                     label="Video Quality (0=worst, 100=best)",
+                    info="FFmpeg CRF/quality value: lower = better quality and larger files. Around 14-23 is typical.",
                     step=1.0,
                     interactive=True,
                 )
@@ -129,6 +141,7 @@ def settings_tab():
                     settings_controls.append(
                         gr.Checkbox(
                             label="Use OS temp folder",
+                            info="Store temporary working files in the system temp directory instead of the app folder. Useful if the app drive is low on space.",
                             value=roop.globals.CFG.use_os_temp_folder,
                             elem_id="use_os_temp_folder",
                             interactive=True,
@@ -137,6 +150,7 @@ def settings_tab():
                     settings_controls.append(
                         gr.Checkbox(
                             label="Show video in browser (re-encodes output)",
+                            info="Preview the finished video in the browser. This re-encodes the file, which adds extra processing time.",
                             value=roop.globals.CFG.output_show_video,
                             elem_id="output_show_video",
                             interactive=True,
@@ -216,7 +230,6 @@ def clean_temp():
 
     prepare_environment()
     gr.Info("Temp Files removed")
-    return None, None, None, None
 
 
 def apply_settings(themes, input_server_name, input_server_port, output_template):
