@@ -62,10 +62,6 @@ ALL_MODELS = [
     ("buffalo_l", "w600k_r50.onnx",
      ["https://huggingface.co/halllooo/buffalo_l/resolve/main/w600k_r50.onnx"]),
 
-    # -- YOLO face detection --
-    ("", "yoloface_8n.onnx",
-     ["https://huggingface.co/facefusion/models-3.0.0/resolve/main/yoloface_8n.onnx"]),
-
     # -- frame processors --
     ("Frame", "deoldify_artistic.onnx",
      ["https://huggingface.co/countfloyd/deepfake/resolve/main/deoldify_artistic.onnx"]),
@@ -80,6 +76,67 @@ ALL_MODELS = [
     ("Frame", "lsdir_x4.onnx",
      ["https://huggingface.co/countfloyd/deepfake/resolve/main/lsdir_x4.onnx"]),
 ]
+
+
+_INTEGRITY_MARKER = ".integrity_ok"
+
+
+def _file_is_corrupt(path: str, filename: str) -> bool:
+    """Return True if *path* appears truncated or corrupt."""
+    if os.path.getsize(path) < 1024:
+        return True
+    try:
+        if filename.endswith(".onnx"):
+            import onnx
+            onnx.load(path)
+        elif filename.endswith(".pth"):
+            import torch
+            torch.load(path, map_location="cpu", weights_only=True)
+    except Exception:
+        return True
+    return False
+
+
+def _redownload_model(target_dir: str, filename: str, urls: list) -> bool:
+    path = os.path.join(target_dir, filename)
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+    conditional_download(target_dir, urls)
+    return os.path.exists(path) and os.path.getsize(path) > 1024
+
+
+def verify_all_models(force: bool = False) -> None:
+    """One-time integrity sweep: detect truncated/corrupt downloads and re-fetch.
+
+    Guarded by a marker file so the full parse only runs once per install.
+    Re-runs automatically if a previous sweep found a bad file (marker absent).
+    """
+    models_root = resolve_relative_path("../models")
+    marker = os.path.join(models_root, _INTEGRITY_MARKER)
+    if not force and os.path.exists(marker):
+        return
+
+    all_ok = True
+    for subdir, filename, urls in ALL_MODELS:
+        target_dir = os.path.join(models_root, subdir) if subdir else models_root
+        path = os.path.join(target_dir, filename)
+        if not os.path.exists(path):
+            continue
+        if _file_is_corrupt(path, filename):
+            print(f"  {filename} failed integrity check — re-downloading.")
+            if not _redownload_model(target_dir, filename, urls):
+                print(f"  Could not repair {filename}; will retry next run.")
+                all_ok = False
+
+    if all_ok:
+        try:
+            os.makedirs(models_root, exist_ok=True)
+            with open(marker, "w", encoding="utf-8") as fh:
+                fh.write("ok\n")
+        except OSError:
+            pass
 
 
 def download_all_models():
