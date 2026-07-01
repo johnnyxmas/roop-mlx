@@ -79,7 +79,17 @@ def run():
             max-height: 238.4px;
             overflow-y: auto !important;
         }
-        .image-container.svelte-1l6wqyv {height: 100%}
+        /* Preview image: fill the 576px box and centre the frame.
+           Targeted by elem_id rather than the Svelte class hash, which
+           changes between gradio versions and silently breaks this rule. */
+        #previewimage { height: 100%; }
+        #previewimage .image-container { height: 100%; }
+        #previewimage img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            margin: auto;
+        }
 
         html, body { background: #0f0f0f !important; color: #e0e0e0 !important; }
 
