@@ -201,8 +201,6 @@ def run():
         theme_obj = _BUILTIN_THEMES.get(_theme_val.lower(), _theme_val)
         with gr.Blocks(
             title=f"{roop.metadata.name} {roop.metadata.version}",
-            theme=theme_obj,
-            css=mycss,
             delete_cache=(60, 86400),
         ) as ui:
             with gr.Row(variant="compact"):
@@ -220,6 +218,8 @@ def run():
         uii.ui_restart_server = False
         try:
             ui.queue().launch(
+                theme=theme_obj,
+                css=mycss,
                 inbrowser=launch_browser,
                 server_name=server_name,
                 server_port=server_port,
