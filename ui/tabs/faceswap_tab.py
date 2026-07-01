@@ -258,7 +258,7 @@ def faceswap_tab():
                 with gr.Row():
                     preview_frame_num = gr.Slider(
                         1,
-                        1,
+                        2,
                         value=1,
                         label="Frame Number",
                         info="0:00:00",
@@ -1467,7 +1467,7 @@ def on_destfiles_changed(destfiles):
 
     list_files_process.clear()
     if destfiles is None or len(destfiles) < 1:
-        return gr.Slider(value=1, maximum=1, info="0:00:00"), "", ""
+        return gr.Slider(value=1, maximum=2, info="0:00:00"), "", ""
 
     for f in destfiles:
         list_files_process.append(ProcessEntry(_fpath(f), 0, 0, 0))
@@ -1490,11 +1490,11 @@ def on_destfiles_changed(destfiles):
     info_html = get_target_file_info_html(filename)
     if total_frames > 1:
         return gr.Slider(
-            value=1, maximum=total_frames, info="0:00:00"
+            value=1, maximum=max(2, total_frames), info="0:00:00"
         ), gen_processing_text(
             list_files_process[idx].startframe, list_files_process[idx].endframe
         ), info_html
-    return gr.Slider(value=1, maximum=total_frames, info="0:00:00"), "", info_html
+    return gr.Slider(value=1, maximum=max(2, total_frames), info="0:00:00"), "", info_html
 
 
 def on_destfiles_selected(evt: gr.SelectData):
@@ -1518,7 +1518,7 @@ def on_destfiles_selected(evt: gr.SelectData):
         return (
             gr.Slider(
                 value=list_files_process[idx].startframe,
-                maximum=total_frames,
+                maximum=max(2, total_frames),
                 info="0:00:00",
             ),
             gen_processing_text(
@@ -1528,7 +1528,7 @@ def on_destfiles_selected(evt: gr.SelectData):
             info_html,
         )
     return (
-        gr.Slider(value=1, maximum=total_frames, info="0:00:00"),
+        gr.Slider(value=1, maximum=max(2, total_frames), info="0:00:00"),
         gen_processing_text(0, 0),
         fps,
         info_html,
