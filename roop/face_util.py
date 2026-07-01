@@ -1,9 +1,8 @@
 """Face detection / alignment utilities.
 
-The InsightFace ``FaceAnalysis`` path that lived here is gone -- it
-was an ONNX Runtime consumer.  The detector indirection now always
-goes through ``roop.face_detector`` (which itself is a stub awaiting
-MLX wiring).
+Uses InsightFace buffalo_l for face detection and recognition.  On Apple
+Silicon the buffalo_l ONNX models run through onnxruntime-silicon, which
+dispatches to Core ML / ANE automatically.
 
 The pure-NumPy / OpenCV alignment helpers (``estimate_norm``,
 ``align_crop``, ``transform``, ``trans_points*``) are unchanged --
@@ -11,62 +10,84 @@ they have no GPU dependency.
 """
 
 from typing import Any
+import threading
 
 import cv2
+import insightface
 import numpy as np
 from skimage import transform as trans
 
+import roop.globals
 from roop.capturer import get_video_frame
 from roop.typing import Frame, Face
+from roop.utilities import resolve_relative_path
+
+FACE_ANALYSER = None
+_face_analyser_lock = threading.Lock()
+_current_face_analysis = None
+
+
+def get_face_analyser() -> Any:
+    global FACE_ANALYSER, _current_face_analysis
+    with _face_analyser_lock:
+        if (
+            FACE_ANALYSER is None
+            or _current_face_analysis != roop.globals.g_desired_face_analysis
+        ):
+            model_path = resolve_relative_path("..")
+            allowed_modules = roop.globals.g_desired_face_analysis
+            _current_face_analysis = roop.globals.g_desired_face_analysis
+            # Apple Silicon: onnxruntime-silicon dispatches to CoreML/ANE;
+            # CPU is the fallback — no CUDA provider needed.
+            providers = ["CoreMLExecutionProvider", "CPUExecutionProvider"]
+            FACE_ANALYSER = insightface.app.FaceAnalysis(
+                name="buffalo_l",
+                root=model_path,
+                providers=providers,
+                allowed_modules=allowed_modules,
+            )
+            FACE_ANALYSER.prepare(
+                ctx_id=0,
+                det_size=(640, 640) if roop.globals.default_det_size else (320, 320),
+            )
+    return FACE_ANALYSER
+
+
+def release_face_analyser() -> None:
+    global FACE_ANALYSER, _current_face_analysis
+    with _face_analyser_lock:
+        FACE_ANALYSER = None
+        _current_face_analysis = None
 
 
 def get_first_face(frame: Frame) -> Any:
     try:
-        from roop.face_detector import get_yolo_detector
-        faces = get_yolo_detector().detect(
-            frame, need_recognition=True, need_landmarks_106=True,
-        )
-        if faces:
-            return min(faces, key=lambda x: x.bbox[0])
-        return None
-    except NotImplementedError:
-        raise
+        faces = get_face_analyser().get(frame)
+        return min(faces, key=lambda x: x.bbox[0])
     except Exception:
         return None
 
 
 def get_all_faces(frame: Frame) -> Any:
     try:
-        from roop.face_detector import get_yolo_detector
-        return get_yolo_detector().detect(
-            frame, need_recognition=True, need_landmarks_106=True,
-        )
-    except NotImplementedError:
-        raise
+        faces = get_face_analyser().get(frame)
+        return sorted(faces, key=lambda x: x.bbox[0])
     except Exception:
         return None
 
 
 def get_all_faces_fast(frame: Frame, need_recognition: bool = False,
                        need_landmarks_106: bool = False) -> Any:
-    """Detect faces without loading optional sub-models unless needed."""
+    """Fast face detection for video frames.
+
+    The need_recognition / need_landmarks_106 flags are kept for call
+    compatibility; InsightFace always computes both.
+    """
     try:
-        from roop.face_detector import get_yolo_detector
-        return get_yolo_detector().detect(
-            frame,
-            need_recognition=need_recognition,
-            need_landmarks_106=need_landmarks_106,
-        )
-    except NotImplementedError:
-        raise
+        faces = get_face_analyser().get(frame)
+        return sorted(faces, key=lambda x: x.bbox[0])
     except Exception:
         return None
-
-
-def release_face_analyser() -> None:
-    """Compat shim -- no global face analyser exists anymore."""
-    from roop.face_detector import release_yolo_detector
-    release_yolo_detector()
 
 
 def extract_face_images(source_filename, video_info, extra_padding=-1.0):
