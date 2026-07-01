@@ -67,6 +67,141 @@ swap_choices = [
 
 current_video_fps = 50
 
+
+_RES_HEIGHTS = {"480p": 480, "720p": 720, "1080p": 1080, "2160p": 2160}
+_RES_TIERS = [480, 720, 1080, 2160]
+
+
+def _current_target_filename():
+    """Path of the currently-selected target (same source of truth as the swap
+    pipeline). Returns None when no target is loaded."""
+    if list_files_process and 0 <= selected_preview_index < len(list_files_process):
+        return list_files_process[selected_preview_index].filename
+    return None
+
+
+def _current_target_height():
+    """Pixel height of the current video target, or None for images/no target."""
+    import cv2 as _cv2
+    fn = _current_target_filename()
+    if fn is None or not util.is_video(fn):
+        return None
+    cap = _cv2.VideoCapture(fn)
+    h = int(cap.get(_cv2.CAP_PROP_FRAME_HEIGHT)) if cap.isOpened() else 0
+    cap.release()
+    return h or None
+
+
+def _conversion_button_states():
+    """Enable/disable the five re-encode buttons based on the current target."""
+    h = _current_target_height()
+    is_video = h is not None
+    size_states = [gr.update(interactive=(is_video and tier < h)) for tier in _RES_TIERS]
+    return size_states + [gr.update(interactive=is_video)]
+
+
+def _lock_for_convert():
+    return [gr.update(interactive=False)] * (3 + len(_RES_TIERS) + 1)
+
+
+def _unlock_after_convert():
+    return [gr.update(interactive=True)] * 3 + _conversion_button_states()
+
+
+def _on_convert_480(fps, progress=gr.Progress()):
+    return on_convert_target_resolution("480p", fps, progress)
+
+
+def _on_convert_720(fps, progress=gr.Progress()):
+    return on_convert_target_resolution("720p", fps, progress)
+
+
+def _on_convert_1080(fps, progress=gr.Progress()):
+    return on_convert_target_resolution("1080p", fps, progress)
+
+
+def _on_convert_2160(fps, progress=gr.Progress()):
+    return on_convert_target_resolution("2160p", fps, progress)
+
+
+def _on_convert_fps(fps, progress=gr.Progress()):
+    return on_convert_target_resolution(None, fps, progress)
+
+
+def on_convert_target_resolution(resolution, fps=0, progress=gr.Progress()):
+    """Re-encode the selected target video (resize and/or FPS change)."""
+    global current_video_fps
+    import roop.util_ffmpeg as ffmpeg
+
+    noop = (gr.update(), gr.update(), gr.update())
+    try:
+        if is_processing:
+            gr.Warning("Cannot re-encode while a swap is running.")
+            return noop
+        if not list_files_process or selected_preview_index >= len(list_files_process):
+            gr.Warning("Load a target video first.")
+            return noop
+        entry = list_files_process[selected_preview_index]
+        src = entry.filename
+        if not util.is_video(src):
+            gr.Warning("The selected target is not a video.")
+            return noop
+
+        try:
+            fps_val = float(fps) if fps else 0.0
+        except (TypeError, ValueError):
+            fps_val = 0.0
+        fps_val = fps_val if fps_val > 0 else None
+
+        height = _RES_HEIGHTS.get(resolution) if resolution else None
+        if height is None and fps_val is None:
+            gr.Warning("Pick a smaller size and/or set an FPS to re-encode.")
+            return noop
+        if height is not None:
+            src_height = _current_target_height()
+            if src_height is not None and height >= src_height:
+                gr.Warning(f"Source is {src_height}px tall; pick a smaller size than {resolution}.")
+                return noop
+
+        size_tag = resolution if resolution else "src"
+        fps_tag = f"_{fps_val:g}fps" if fps_val else ""
+        temp_dir = util.resolve_relative_path("../temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        base = os.path.splitext(os.path.basename(src))[0]
+        out = os.path.join(temp_dir, f"{base}__{size_tag}{fps_tag}.mp4")
+
+        desc = " + ".join(
+            ([resolution] if height is not None else [])
+            + ([f"{fps_val:g} fps"] if fps_val else [])
+        )
+        _desc = f"Re-encoding target to {desc}..."
+        progress(0, desc=_desc)
+        ok = ffmpeg.scale_video(
+            src, out, height, fps_val,
+            on_progress=lambda frac: progress(frac, desc=_desc),
+        )
+        if not ok or not os.path.exists(out):
+            gr.Warning("Video re-encode failed — target unchanged.")
+            return noop
+
+        entry.filename = out
+        entry.startframe = 0
+        total_frames = get_video_frame_total(out)
+        entry.endframe = total_frames
+        current_video_fps = util.detect_fps(out)
+        entry.fps = current_video_fps
+        info_html = get_target_file_info_html(out)
+        progress(1.0)
+        gr.Info(f"Re-encoded to {desc} and loaded as target.")
+        return (
+            gr.Slider(value=1, maximum=max(2, total_frames), info="0:00:00"),
+            gen_processing_text(entry.startframe, entry.endframe),
+            info_html,
+        )
+    except Exception as e:
+        gr.Warning(f"Re-encode error: {e}")
+        return noop
+
 manual_masking = False
 
 
@@ -83,8 +218,9 @@ def faceswap_tab():
                         preview=False,
                         height=138,
                         columns=64,
-                        object_fit="scale-down",
+                        object_fit="contain",
                         interactive=False,
+                        elem_classes=["facestrip"],
                     )
                     target_faces = gr.Gallery(
                         label="Target faces gallery",
@@ -92,8 +228,9 @@ def faceswap_tab():
                         preview=False,
                         height=138,
                         columns=64,
-                        object_fit="scale-down",
+                        object_fit="contain",
                         interactive=False,
+                        elem_classes=["facestrip"],
                     )
                 with gr.Row():
                     bt_move_left_input = gr.Button("⬅ Move left", size="sm")
@@ -209,6 +346,29 @@ def faceswap_tab():
                         height=233,
                     )
                 target_file_info = gr.HTML(value="", visible=True, elem_id="target_file_info")
+                gr.Markdown(
+                    "**Re-encode source video** — replaces the target with a "
+                    "downscaled and/or FPS-changed copy. Size buttons re-encode "
+                    "to that resolution (sizes at or above the source are "
+                    "disabled). The FPS field can be applied on its own."
+                )
+                with gr.Row(variant="panel"):
+                    bt_conv_480 = gr.Button("480p", variant="secondary", size="sm", interactive=False)
+                    bt_conv_720 = gr.Button("720p", variant="secondary", size="sm", interactive=False)
+                    bt_conv_1080 = gr.Button("1080p", variant="secondary", size="sm", interactive=False)
+                    bt_conv_2160 = gr.Button("2160p", variant="secondary", size="sm", interactive=False)
+                with gr.Row(variant="panel"):
+                    target_fps = gr.Number(
+                        value=0,
+                        label="Re-encode FPS (0 = keep source)",
+                        minimum=0,
+                        maximum=240,
+                        scale=2,
+                    )
+                    bt_conv_fps = gr.Button(
+                        "Change FPS (keep size)", variant="secondary", size="sm",
+                        interactive=False, scale=1,
+                    )
                 with gr.Row(variant="panel"):
                     ui.globals.ui_selected_swap_model = gr.Dropdown(
                         model_swap_choices,
@@ -482,6 +642,7 @@ def faceswap_tab():
     )
 
     forced_fps.change(fn=on_fps_changed, inputs=[forced_fps], show_progress="hidden")
+    _conversion_buttons = [bt_conv_480, bt_conv_720, bt_conv_1080, bt_conv_2160, bt_conv_fps]
     bt_destfiles.change(
         fn=on_destfiles_changed,
         inputs=[bt_destfiles],
@@ -492,7 +653,7 @@ def faceswap_tab():
         inputs=previewinputs,
         outputs=previewoutputs,
         show_progress="hidden",
-    )
+    ).then(fn=_conversion_button_states, outputs=_conversion_buttons)
     bt_destfiles.select(
         fn=on_destfiles_selected,
         outputs=[preview_frame_num, text_frame_clip, forced_fps, target_file_info],
@@ -502,10 +663,31 @@ def faceswap_tab():
         inputs=previewinputs,
         outputs=previewoutputs,
         show_progress="hidden",
-    )
+    ).then(fn=_conversion_button_states, outputs=_conversion_buttons)
     bt_destfiles.clear(
         fn=on_clear_destfiles, outputs=[target_faces, selected_face_detection, target_file_info]
-    )
+    ).then(fn=_conversion_button_states, outputs=_conversion_buttons)
+
+    _convert_lockables = [bt_start, bt_srcfiles, bt_destfiles] + _conversion_buttons
+    for _btn, _conv_fn in (
+        (bt_conv_480, _on_convert_480),
+        (bt_conv_720, _on_convert_720),
+        (bt_conv_1080, _on_convert_1080),
+        (bt_conv_2160, _on_convert_2160),
+        (bt_conv_fps, _on_convert_fps),
+    ):
+        _btn.click(
+            fn=_lock_for_convert, outputs=_convert_lockables, queue=False,
+        ).then(
+            fn=_conv_fn, inputs=[target_fps],
+            outputs=[preview_frame_num, text_frame_clip, target_file_info],
+            show_progress="full",
+        ).then(
+            fn=on_preview_frame_changed, inputs=previewinputs,
+            outputs=previewoutputs, show_progress="hidden",
+        ).then(
+            fn=_unlock_after_convert, outputs=_convert_lockables, queue=False,
+        )
     resultfiles.select(
         fn=on_resultfiles_selected,
         inputs=[resultfiles],
