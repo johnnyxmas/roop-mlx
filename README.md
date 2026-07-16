@@ -1,11 +1,14 @@
 # roop-mlx
 
-Face swap images and video without training, powered by Apple MLX and a browser-based GUI.
-Apple Silicon (arm64 macOS) only.
+Face swap images and video without training, tuned for Apple Silicon: a hybrid
+inference engine (Apple CoreML + MLX), hardware video decode/encode via
+VideoToolbox, and a browser-based GUI. Apple Silicon (arm64 macOS) only.
 
-[Installation](#installation) • [Usage](#usage) • [Changelog](CHANGELOG.md)
+[Installation](#installation) • [Usage](#usage) • [Engine](#engine) • [Changelog](CHANGELOG.md)
 
 > On first run, models (~2 GB) are downloaded automatically to `models/`.
+> The first launch also compiles the CoreML models (a few seconds each,
+> cached on disk in `models/*/coreml_cache/` afterwards).
 
 ---
 
@@ -13,14 +16,16 @@ Apple Silicon (arm64 macOS) only.
 
 - Browser-based GUI
 - Multiple face swapping modes: first detected, by selection, by gender, random, all input faces
-- ReSwapper model option (128px & 256px) alongside InsightFace inswapper
+- Swap models: InsightFace inswapper, ReSwapper (128px & 256px), HyperSwap (256px)
 - Batch processing of images and video
 - Face occlusion masking via XSeg
 - Face enhancers: GFPGAN, CodeFormer, GPEN (512/1024/2048px), RestoreFormer++
 - Subsample upscaling for higher resolution swaps
 - Frame processors: colorizer, upscaler, filters, background removal
 - Live webcam face swap with virtual camera output
-- VideoToolbox hardware encoding (h264/hevc) on Apple Silicon, libx264 fallback
+- Hardware video pipeline: AVFoundation/VideoToolbox decode and h264/hevc
+  encode, with explicitly tagged BT.709 color end to end
+- Multi-threaded processing overlapping CPU compositing with ANE/GPU inference
 - Extras tab: video cutting, joining, repair, colorization, upscaling
 - Settings persist between sessions via `config.yaml`
 - Theme support
@@ -46,7 +51,8 @@ This software is provided for authorized research, academic study, and lawful us
 ### Prerequisites
 
 - **Apple Silicon Mac** (M1 / M2 / M3 / M4) running macOS 13.5 or newer
-- **Python 3.11** — [python.org](https://www.python.org/downloads/) or Homebrew
+- **Python 3.11 – 3.13** — [python.org](https://www.python.org/downloads/) or Homebrew
+  (3.14 is not yet supported by the pinned UI dependencies)
 - **ffmpeg** on your system PATH — `brew install ffmpeg` is the easy path
 - A virtual environment is strongly recommended
 
@@ -58,8 +64,8 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-No provider flags, no CUDA wheels, no TensorRT to build.
-The `mlx` and `mlx-nn` packages pull arm64 wheels automatically.
+No provider flags, no CUDA wheels, no TensorRT to build. The `mlx` and
+`onnxruntime` arm64 wheels install automatically.
 
 ---
 
@@ -116,6 +122,34 @@ All settings are stored in `config.yaml` and editable from the **⚙ Settings** 
 | **Video Quality** | Quality value. For `libx264` / `libx265` this is CRF (lower = higher quality, default 14, typical 18–28). For VideoToolbox this is `-q:v` (higher = better). |
 | **Use OS temp folder** | Store extracted frames in the OS temp directory instead of the project folder. Helpful when your project drive is small. Temp files are cleared on reboot or via the Clean temp folder button. |
 | **Show video in browser** | Re-encode the final video for in-browser playback. Adds an extra encode pass — disable if you don't need browser preview. |
+
+---
+
+## Engine
+
+Every model runs on its benchmark-fastest backend (see
+[roop/inference.py](roop/inference.py)); each adoption was gated on
+numerical parity against the ONNX reference implementation:
+
+| Workload | Backend |
+| --- | --- |
+| Face detection (YOLOv8n-Face), recognition (ArcFace), landmarks, gender/age | CoreML (ANE/GPU) |
+| Swap models: inswapper, ReSwapper, HyperSwap | CoreML |
+| Enhancers: GFPGAN, CodeFormer, RestoreFormer++ | CoreML |
+| Upscalers: Real-ESRGAN ×4, LSDIR ×4 | CoreML |
+| GPEN, XSeg, DeOldify, ISNet, Real-ESRGAN ×2 | MLX graph interpreter |
+| Video decode / encode | VideoToolbox hardware |
+
+If `onnxruntime` is unavailable, everything falls back to the in-repo
+ONNX-to-MLX interpreter (inswapper falls back to a hand-ported, compiled
+`mlx.nn` model).
+
+Run the test suite (model parity, compositing math, color pipeline) with:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
 ---
 
