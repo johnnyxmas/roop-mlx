@@ -15,6 +15,8 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
+from roop.mlx_runtime.onnx_loader import MLX_RUN_LOCK
+
 
 def _reflect_pad(x: mx.array, pad_h: int, pad_w: int) -> mx.array:
     if pad_h > 0:
@@ -60,9 +62,12 @@ class AdaINBlock(nn.Module):
 
     @staticmethod
     def _instance_norm(x: mx.array) -> mx.array:
-        mean = mx.mean(x, axis=(1, 2), keepdims=True)
-        var = mx.mean((x - mean) ** 2, axis=(1, 2), keepdims=True)
-        return (x - mean) / mx.sqrt(var + 1e-8)
+        # Statistics in float32: fp16 mean/variance over 32x32x1024
+        # activations loses enough precision to shift the style modulation.
+        xf = x.astype(mx.float32)
+        mean = mx.mean(xf, axis=(1, 2), keepdims=True)
+        var = mx.mean((xf - mean) ** 2, axis=(1, 2), keepdims=True)
+        return ((xf - mean) * mx.rsqrt(var + 1e-8)).astype(x.dtype)
 
     @staticmethod
     def _style_mod(x: mx.array, style: mx.array) -> mx.array:
@@ -82,6 +87,8 @@ class AdaINBlock(nn.Module):
 class InSwapperNative(nn.Module):
     def __init__(self):
         super().__init__()
+        self._io_dtype = mx.float32
+        self._forward = self.__call__
         self.enc0 = nn.Conv2d(3, 128, 7)
         self.enc1 = nn.Conv2d(128, 256, 3, padding=1)
         self.enc2 = nn.Conv2d(256, 512, 3, stride=2, padding=1)
@@ -164,17 +171,23 @@ class InSwapperNative(nn.Module):
             model.update(to_fp16(model.parameters()))
 
         mx.eval(model.parameters())
+        model._io_dtype = dtype if dtype in (mx.float16, mx.float32) else mx.float32
+        # Compiling fuses the elementwise chains (norm/style/activation and
+        # the bilinear upsample) and caches the kernel graph per input shape.
+        model._forward = mx.compile(model.__call__)
         return model
 
     def run(self, output_names, input_feed: dict[str, np.ndarray]) -> list[np.ndarray]:
         target_nchw = input_feed["target"]
         source = input_feed["source"]
 
-        target_nhwc = mx.array(target_nchw.transpose(0, 2, 3, 1))
-        source_mx = mx.array(source)
+        with MLX_RUN_LOCK:
+            target_nhwc = mx.array(target_nchw.transpose(0, 2, 3, 1)).astype(self._io_dtype)
+            source_mx = mx.array(source).astype(self._io_dtype)
 
-        out_nhwc = self(target_nhwc, source_mx)
-        mx.eval(out_nhwc)
+            out_nhwc = self._forward(target_nhwc, source_mx)
+            out_nhwc = out_nhwc.astype(mx.float32)
+            mx.eval(out_nhwc)
 
-        out_nchw = np.array(out_nhwc).transpose(0, 3, 1, 2)
+            out_nchw = np.array(out_nhwc).transpose(0, 3, 1, 2)
         return [out_nchw]

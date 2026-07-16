@@ -50,10 +50,6 @@ def parse_args() -> None:
     roop.globals.frame_processors = ["face_swapper", "face_enhancer"]
 
 
-def suggest_execution_threads() -> int:
-    return 1
-
-
 def release_resources() -> None:
     global process_mgr
 
@@ -190,9 +186,8 @@ def batch_process_with_options(files: list[ProcessEntry], options, progress):
 def batch_process(output_method, files: list[ProcessEntry], use_new_method) -> None:
     roop.globals.processing = True
 
-    max_threads = suggest_execution_threads()
-    if max_threads == 1:
-        roop.globals.execution_threads = 1
+    if not roop.globals.execution_threads or roop.globals.execution_threads < 1:
+        roop.globals.execution_threads = roop.globals.CFG.max_threads
 
     imagefiles: list[ProcessEntry] = []
     videofiles: list[ProcessEntry] = []

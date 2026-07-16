@@ -19,6 +19,7 @@ Supported ops (sufficient for YOLO, InSwapper, w600k_r50, 2d106det):
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 import mlx.core as mx
@@ -26,6 +27,12 @@ import mlx.nn as mlx_nn
 import numpy as np
 import onnx
 from onnx import TensorProto, numpy_helper
+
+
+# Serializes all MLX inference across worker threads.  The GPU executes
+# one graph at a time anyway; the lock buys thread-safety so the CPU-side
+# work (decode, warps, compositing, encode) can overlap GPU inference.
+MLX_RUN_LOCK = threading.Lock()
 
 
 _ONNX_TO_MLX_DTYPE = {
@@ -326,40 +333,41 @@ class OnnxMLXSession:
             output_names = self._output_names
         output_set = frozenset(n for n in output_names if n)
 
-        values: dict[str, mx.array] = dict(self._weights)
-        for k, v in input_feed.items():
-            values[k] = _np_to_mx(np.asarray(v))
+        with MLX_RUN_LOCK:
+            values: dict[str, mx.array] = dict(self._weights)
+            for k, v in input_feed.items():
+                values[k] = _np_to_mx(np.asarray(v))
 
-        for i, node in enumerate(self._graph.node):
-            op = node.op_type
-            if op == "Constant":
-                continue
-            handler = self._dispatch.get(op)
-            if handler is None:
-                raise NotImplementedError(
-                    f"ONNX op '{op}' is not implemented in OnnxMLXSession"
-                )
-            handler(node, values)
+            for i, node in enumerate(self._graph.node):
+                op = node.op_type
+                if op == "Constant":
+                    continue
+                handler = self._dispatch.get(op)
+                if handler is None:
+                    raise NotImplementedError(
+                        f"ONNX op '{op}' is not implemented in OnnxMLXSession"
+                    )
+                handler(node, values)
 
-            if op in self._eval_after:
-                for out_name in node.output:
-                    if out_name and out_name in values:
-                        mx.eval(values[out_name])
+                if op in self._eval_after:
+                    for out_name in node.output:
+                        if out_name and out_name in values:
+                            mx.eval(values[out_name])
 
-            for inp in node.input:
-                if (inp
-                        and self._last_use.get(inp) == i
-                        and inp not in self._weights
-                        and inp not in output_set
-                        and inp in values):
-                    del values[inp]
+                for inp in node.input:
+                    if (inp
+                            and self._last_use.get(inp) == i
+                            and inp not in self._weights
+                            and inp not in output_set
+                            and inp in values):
+                        del values[inp]
 
-        mx.eval(*[values[n] for n in output_names if n in values])
-        outputs = [np.array(values[n]) for n in output_names]
-        # Drop all remaining activations (weights stay in self._weights).
-        for k in [k for k in values if k not in self._weights]:
-            del values[k]
-        return outputs
+            mx.eval(*[values[n] for n in output_names if n in values])
+            outputs = [np.array(values[n]) for n in output_names]
+            # Drop all remaining activations (weights stay in self._weights).
+            for k in [k for k in values if k not in self._weights]:
+                del values[k]
+            return outputs
 
     def _v(self, values: dict, name: str) -> mx.array | None:
         """Fetch a named value; return None if name is empty."""

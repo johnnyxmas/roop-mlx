@@ -464,15 +464,17 @@ class ProcessMgr:
     _PROGRESS_INTERVAL: float = 5.0   # seconds between progress updates
 
     def update_progress(self, progress: Any = None) -> None:
-        self._pending_frames += 1
+        # Called from every worker thread; guard the shared counters.
+        with self.lock:
+            self._pending_frames += 1
 
-        now = time.time()
-        if (now - self._last_progress_time) < self._PROGRESS_INTERVAL:
-            return
+            now = time.time()
+            if (now - self._last_progress_time) < self._PROGRESS_INTERVAL:
+                return
 
-        batch = self._pending_frames
-        self._pending_frames = 0
-        self._last_progress_time = now
+            batch = self._pending_frames
+            self._pending_frames = 0
+            self._last_progress_time = now
 
         import roop.globals
 
@@ -872,16 +874,26 @@ class ProcessMgr:
                 else:
                     swap_source = inputface
 
-                swap_result_frames = []
                 subsample_frames = self.implode_pixel_boost(
                     aligned_img, model_output_size, subsample_total
                 )
-                for sliced_frame in subsample_frames:
+                if getattr(p, "supports_batch", False):
+                    # Swap every pixel-boost slice in a single batched
+                    # dispatch instead of one GPU round-trip per slice.
+                    frames = subsample_frames
                     for _ in range(0, self.options.num_swap_steps):
-                        sliced_frame = self.prepare_crop_frame(sliced_frame)
-                        sliced_frame = p.Run(swap_source, target_face, sliced_frame)
-                        sliced_frame = self.normalize_swap_frame(sliced_frame)
-                    swap_result_frames.append(sliced_frame)
+                        blob = self.prepare_crop_frames(frames)
+                        blob = p.Run(swap_source, target_face, blob)
+                        frames = self.normalize_swap_frames(blob)
+                    swap_result_frames = list(frames)
+                else:
+                    swap_result_frames = []
+                    for sliced_frame in subsample_frames:
+                        for _ in range(0, self.options.num_swap_steps):
+                            sliced_frame = self.prepare_crop_frame(sliced_frame)
+                            sliced_frame = p.Run(swap_source, target_face, sliced_frame)
+                            sliced_frame = self.normalize_swap_frame(sliced_frame)
+                        swap_result_frames.append(sliced_frame)
                 fake_frame = self.explode_pixel_boost(
                     swap_result_frames,
                     model_output_size,
@@ -973,14 +985,35 @@ class ProcessMgr:
         M_scale = M * scale_factor
         IM = cv2.invertAffineTransform(M_scale)
 
-        face_matte = np.full(
-            (target_img.shape[0], target_img.shape[1]), 255, dtype=np.uint8
+        h = upsk_face.shape[0]
+        w = upsk_face.shape[1]
+
+        # Compositing only touches the warped face crop plus the mask blur.
+        # Restrict all warping/blending to that ROI instead of running
+        # full-frame float32 math for every face on every frame.
+        corners = np.array([[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float32)
+        warped_corners = corners @ IM[:, :2].T + IM[:, 2]
+        ext = max(
+            warped_corners[:, 0].max() - warped_corners[:, 0].min(),
+            warped_corners[:, 1].max() - warped_corners[:, 1].min(),
         )
-        img_matte = np.zeros((upsk_face.shape[0], upsk_face.shape[1]), dtype=np.uint8)
+        # Upper bound of blur_area's kernel reach (erosion only shrinks the
+        # mask, so covering the Gaussian kernel size is sufficient).
+        blur_amount = max(int(mask_offsets[5]), 1)
+        margin = int(max(ext // blur_amount, blur_amount // 5)) + 8
+        x0 = max(int(np.floor(warped_corners[:, 0].min())) - margin, 0)
+        y0 = max(int(np.floor(warped_corners[:, 1].min())) - margin, 0)
+        x1 = min(int(np.ceil(warped_corners[:, 0].max())) + margin, target_img.shape[1])
+        y1 = min(int(np.ceil(warped_corners[:, 1].max())) + margin, target_img.shape[0])
+        if x1 <= x0 or y1 <= y0:
+            return target_img.copy()
 
-        w = img_matte.shape[1]
-        h = img_matte.shape[0]
+        # Shift the inverse transform into ROI-local coordinates
+        IM_roi = IM.copy()
+        IM_roi[:, 2] -= (x0, y0)
+        roi_size = (x1 - x0, y1 - y0)
 
+        img_matte = np.zeros((h, w), dtype=np.uint8)
         top = int(mask_offsets[0] * h)
         bottom = int(h - (mask_offsets[1] * h))
         left = int(mask_offsets[2] * w)
@@ -989,35 +1022,31 @@ class ProcessMgr:
 
         img_matte = cv2.warpAffine(
             img_matte,
-            IM,
-            (target_img.shape[1], target_img.shape[0]),
+            IM_roi,
+            roi_size,
             flags=cv2.INTER_NEAREST,
             borderValue=0.0,
         )
-        # blacken 1-pixel border so the mask doesn't bleed to image edges
+        # blacken the 1-pixel ROI border: at frame edges this matches the old
+        # full-frame behavior; elsewhere the matte is already 0 at the border
         img_matte[:1, :] = img_matte[-1:, :] = img_matte[:, :1] = img_matte[:, -1:] = 0
+        if not img_matte.any():
+            return target_img.copy()
 
         img_matte = self.blur_area(img_matte, mask_offsets[4], mask_offsets[5])
         img_matte = img_matte.astype(np.float32) / 255
-        face_matte = face_matte.astype(np.float32) / 255
-        img_matte = np.minimum(face_matte, img_matte)
-        if self.options.show_face_area_overlay:
-            green_overlay = np.zeros_like(target_img)
-            green_color = [0, 255, 0]  # RGB for green
-            for i in range(3):
-                green_overlay[:, :, i] = np.where(img_matte > 0, green_color[i], 0)
         img_matte = np.reshape(img_matte, [img_matte.shape[0], img_matte.shape[1], 1])
         paste_face = cv2.warpAffine(
             upsk_face,
-            IM,
-            (target_img.shape[1], target_img.shape[0]),
+            IM_roi,
+            roi_size,
             borderMode=cv2.BORDER_REPLICATE,
         )
         if upsk_face is not fake_face:
             fake_face = cv2.warpAffine(
                 fake_face,
-                IM,
-                (target_img.shape[1], target_img.shape[0]),
+                IM_roi,
+                roi_size,
                 borderMode=cv2.BORDER_REPLICATE,
             )
             paste_face = cv2.addWeighted(
@@ -1028,13 +1057,18 @@ class ProcessMgr:
                 0,
             )
 
+        target_roi = target_img[y0:y1, x0:x1]
         paste_face = img_matte * paste_face
-        paste_face = paste_face + (1 - img_matte) * target_img.astype(np.float32)
+        paste_face = paste_face + (1 - img_matte) * target_roi.astype(np.float32)
+        paste_face = paste_face.astype(np.uint8)
         if self.options.show_face_area_overlay:
-            paste_face = cv2.addWeighted(
-                paste_face.astype(np.uint8), 1 - 0.5, green_overlay, 0.5, 0
-            )
-        return paste_face.astype(np.uint8)
+            green_overlay = np.zeros_like(paste_face)
+            green_overlay[:, :, 1] = np.where(img_matte[:, :, 0] > 0, 255, 0)
+            paste_face = cv2.addWeighted(paste_face, 1 - 0.5, green_overlay, 0.5, 0)
+
+        result = target_img.copy()
+        result[y0:y1, x0:x1] = paste_face
+        return result
 
     def blur_area(self, img_matte, num_erosion_iterations, blur_amount):
         mask_h_inds, mask_w_inds = np.where(img_matte == 255)
@@ -1076,6 +1110,26 @@ class ProcessMgr:
             swap_frame = swap_frame.transpose(2, 0, 1)
             swap_frame = np.expand_dims(swap_frame, axis=0).astype(np.float32)
         return swap_frame
+
+    def prepare_crop_frames(self, frames):
+        """Batched prepare_crop_frame: [N, H, W, 3] BGR uint8/float -> [N, 3, H, W] float32."""
+        model_type = self._get_swap_type()
+        frames = np.asarray(frames)
+        if model_type in ("ghost", "hyperswap", "uniface"):
+            blob = frames[:, :, :, ::-1] / 127.5 - 1
+        else:
+            blob = frames[:, :, :, ::-1] / 255.0
+        return np.ascontiguousarray(blob.transpose(0, 3, 1, 2), dtype=np.float32)
+
+    def normalize_swap_frames(self, blob):
+        """Batched normalize_swap_frame: [N, 3, H, W] -> [N, H, W, 3] BGR."""
+        model_type = self._get_swap_type()
+        frames = np.asarray(blob).transpose(0, 2, 3, 1)
+        if model_type in ("ghost", "hyperswap", "uniface"):
+            frames = (frames * 127.5 + 127.5).round()
+        else:
+            frames = (frames * 255.0).round()
+        return frames[:, :, :, ::-1]
 
     def normalize_swap_frame(self, swap_frame):
         model_type = self._get_swap_type()

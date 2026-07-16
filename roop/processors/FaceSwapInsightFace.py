@@ -16,6 +16,9 @@ class FaceSwapInsightFace:
 
     processorname = "faceswap"
     type = "swap"
+    # True when the loaded model accepts [N, C, H, W] batches, letting
+    # ProcessMgr swap all pixel-boost slices in one dispatch.
+    supports_batch = False
 
     def Initialize(self, plugin_options: dict):
         if self.plugin_options is not None:
@@ -46,9 +49,18 @@ class FaceSwapInsightFace:
             np.save(emap_cache, self.emap)
 
         import mlx.core as mx
-        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
-        self._session = OnnxMLXSession(model_path, dtype=mx.float16)
-        self._output_name = self._session.get_outputs()[0].name
+        if os.path.basename(model_path) == "inswapper_128.onnx":
+            # Fast path: hand-ported, compiled mlx.nn model — no per-node
+            # interpreter dispatch, batch-capable.
+            from roop.mlx_runtime.inswapper_native import InSwapperNative
+            self._session = InSwapperNative.from_onnx(model_path, dtype=mx.float16)
+            self._output_name = "output"
+            self.supports_batch = True
+        else:
+            from roop.mlx_runtime.onnx_loader import OnnxMLXSession
+            self._session = OnnxMLXSession(model_path, dtype=mx.float16)
+            self._output_name = self._session.get_outputs()[0].name
+            self.supports_batch = False
 
     def Run(self, source_face, target_face: Face, temp_frame: Frame) -> Frame:
         if hasattr(source_face, "faces") and source_face.faces:
@@ -72,3 +84,4 @@ class FaceSwapInsightFace:
     def Release(self):
         self._session = None
         self.emap = None
+        self.supports_batch = False

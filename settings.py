@@ -1,4 +1,13 @@
+import os
+
 import yaml
+
+
+def _default_max_threads() -> int:
+    """Processing worker threads. MLX inference is serialized on the GPU
+    anyway; extra workers overlap CPU-side decode/warp/composite work with
+    GPU inference, so a couple of workers is enough."""
+    return max(2, min(4, (os.cpu_count() or 8) // 3))
 
 
 class Settings:
@@ -32,7 +41,11 @@ class Settings:
         )
         self.video_quality = self.default_get(data, "video_quality", 70)
         self.clear_output = self.default_get(data, "clear_output", True)
-        self.max_threads = 1
+        self.max_threads = self.default_get(data, "max_threads", _default_max_threads())
+        if self.max_threads < 2:
+            # Older versions hardcoded (and saved) max_threads: 1, so any
+            # stored 1 is machine-written — migrate it to the new default.
+            self.max_threads = _default_max_threads()
         self.memory_limit = self.default_get(data, "memory_limit", 0)
         self.output_template = self.default_get(
             data, "output_template", "{file}_{time}"
@@ -52,7 +65,7 @@ class Settings:
             "output_video_codec": self.output_video_codec,
             "video_quality": self.video_quality,
             "clear_output": self.clear_output,
-            "max_threads": 1,
+            "max_threads": self.max_threads,
             "memory_limit": self.memory_limit,
             "output_template": self.output_template,
             "use_os_temp_folder": self.use_os_temp_folder,
