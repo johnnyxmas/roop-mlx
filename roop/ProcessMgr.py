@@ -20,7 +20,6 @@ from roop.perf_profile import (
 )
 from roop.utilities import (
     compute_cosine_distance,
-    get_device,
     str_to_class,
     shuffle_array,
 )
@@ -107,8 +106,6 @@ class ProcessMgr:
         if progress is not None:
             self.progress_gradio = progress
         self._thread_local = thread_local()
-        # Kept for plumbing compatibility -- single-device on Apple Silicon.
-        self.processors_by_gpu = []
         self.processors = []
         self.input_face_datas = []
         self.target_face_datas = []
@@ -127,7 +124,6 @@ class ProcessMgr:
         self.last_swapped_frame = None
         self.options = options
         self._thread_local = thread_local()
-        devicename = get_device()
 
         if options.swap_mode == "all_random":
             # don't modify original list
@@ -154,7 +150,6 @@ class ProcessMgr:
                 module = "roop.processors." + classname
                 p = str_to_class(module, classname)
             if p is not None:
-                extoption.update({"devicename": devicename, "device_id": 0})
                 if p.type == "swap":
                     extoption.update({"modelname": self._resolve_modelname(self.options.swap_modelname)})
                 p.Initialize(extoption)
@@ -162,8 +157,6 @@ class ProcessMgr:
             else:
                 print(f"Not using {module}")
         self.processors = newprocessors
-
-        self.processors_by_gpu = [self.processors]
 
         if (
             isinstance(self.options.imagemask, dict)
@@ -217,8 +210,6 @@ class ProcessMgr:
                 queue = create_queue(source_files)
                 queue_per_future = max(len(source_files) // threads, 1)
                 completed_count = 0
-                chunk_index = 0
-                num_gpus = len(self.processors_by_gpu) if self.processors_by_gpu else 1
                 while not queue.empty():
                     future = executor.submit(
                         self.process_frames,
@@ -226,10 +217,8 @@ class ProcessMgr:
                         target_files,
                         pick_queue(queue, queue_per_future),
                         lambda: self.update_progress(progress),
-                        chunk_index % num_gpus,
                     )
                     futures.append(future)
-                    chunk_index += 1
                 for future in as_completed(futures):
                     future.result()
                     completed_count += 1
@@ -240,11 +229,8 @@ class ProcessMgr:
         target_files: List[str],
         current_files,
         update: Callable[[], None],
-        gpu_index: int = 0,
     ) -> None:
-        if self.processors_by_gpu and gpu_index < len(self.processors_by_gpu):
-            self._thread_local.processors = self.processors_by_gpu[gpu_index]
-        _processors = getattr(self._thread_local, 'processors', self.processors)
+        _processors = self.processors
         file_to_idx = {f: i for i, f in enumerate(source_files)}
         for f in current_files:
             if not roop.globals.processing:
@@ -291,9 +277,7 @@ class ProcessMgr:
             self.frames_queue[i].put(None)
 
     def process_videoframes(self, threadindex, progress) -> None:
-        if self.processors_by_gpu:
-            self._thread_local.processors = self.processors_by_gpu[threadindex % len(self.processors_by_gpu)]
-        _processors = getattr(self._thread_local, 'processors', self.processors)
+        _processors = self.processors
         while True:
             frame = self.frames_queue[threadindex].get()
             if frame is None:
@@ -865,7 +849,7 @@ class ProcessMgr:
         fake_frame = aligned_img
         target_face.matrix = M
 
-        _processors = getattr(self._thread_local, 'processors', self.processors)
+        _processors = self.processors
         for p in _processors:
             if p.type == "swap":
                 if p.processorname == "faceswap_ff":
@@ -1284,20 +1268,12 @@ class ProcessMgr:
         source = (source - source_mean) * (target_std / source_std) + target_mean
         return cv2.cvtColor(np.clip(source, 0, 255).astype("uint8"), cv2.COLOR_LAB2BGR)
 
-    def unload_models():
-        pass
-
     def release_resources(self):
         import tempfile
         import shutil
-        
-        released = set()
-        for gpu_processors in self.processors_by_gpu:
-            for p in gpu_processors:
-                if id(p) not in released:
-                    p.Release()
-                    released.add(id(p))
-        self.processors_by_gpu.clear()
+
+        for p in self.processors:
+            p.Release()
         self.processors.clear()
         if self.videowriter is not None:
             self.videowriter.close()

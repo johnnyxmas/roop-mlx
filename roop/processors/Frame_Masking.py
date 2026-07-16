@@ -24,9 +24,9 @@ class Frame_Masking:
         if getattr(self, "_session", None) is not None:
             return
 
-        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
+        from roop.inference import create_session
         model_path = resolve_relative_path("../models/Frame/isnet-general-use.onnx")
-        self._session = OnnxMLXSession(model_path)
+        self._session = create_session(model_path)
 
     def Run(self, temp_frame: Frame) -> Frame:
         orig_h, orig_w = temp_frame.shape[:2]

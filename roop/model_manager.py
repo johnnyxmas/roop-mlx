@@ -78,9 +78,28 @@ ALL_MODELS = [
 ]
 
 
+# Downloaded by older versions but never loaded by the MLX port.
+_STALE_MODELS = [
+    ("buffalo_l", "det_10g.onnx"),
+    ("buffalo_l", "1k3d68.onnx"),
+]
+
+
+def _remove_stale_models(models_root: str):
+    for subdir, fname in _STALE_MODELS:
+        path = os.path.join(models_root, subdir, fname)
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+                print(f"Removed unused model {subdir}/{fname}")
+            except OSError:
+                pass
+
+
 def download_all_models():
     """Download every model in the registry that isn't already on disk."""
     models_root = resolve_relative_path("../models")
+    _remove_stale_models(models_root)
 
     by_dir: dict[str, list] = {}
     for subdir, filename, urls in ALL_MODELS:

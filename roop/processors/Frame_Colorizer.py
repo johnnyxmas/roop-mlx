@@ -37,8 +37,8 @@ class Frame_Colorizer:
         fname = f"{subtype}.onnx"
         model_path = resolve_relative_path(f"../models/Frame/{fname}")
 
-        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
-        self._session = OnnxMLXSession(model_path)
+        from roop.inference import create_session
+        self._session = create_session(model_path)
         self._output_name = self._session.get_outputs()[0].name
 
     def getProcessedResolution(self, width: int, height: int):

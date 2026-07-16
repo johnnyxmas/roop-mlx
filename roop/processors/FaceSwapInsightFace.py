@@ -85,10 +85,6 @@ class FaceSwapInsightFace:
         )
         return result[0]
 
-    def RunBatch(self, source_faces, target_faces, temp_frames):
-        return [self.Run(sf, tf, fr)
-                for sf, tf, fr in zip(source_faces, target_faces, temp_frames)]
-
     def Release(self):
         self._session = None
         self.emap = None

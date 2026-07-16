@@ -16,9 +16,6 @@ import numpy as np
 from roop.utilities import resolve_relative_path
 
 
-DETECTOR_CHOICES = ["YOLOv8n-Face"]
-
-
 # ---------------------------------------------------------------------------
 # FaceCompat
 # ---------------------------------------------------------------------------

@@ -176,8 +176,11 @@ def faceswap_tab():
                             bt_toggle_masking = gr.Button(
                                 "Toggle manual masking", variant="secondary", size="sm"
                             )
+                            # Clip2Seg is hidden until the CLIP module is
+                            # ported off torch (torch is not a dependency of
+                            # the MLX fork, so selecting it would crash).
                             selected_mask_engine = gr.Dropdown(
-                                ["None", "Clip2Seg", "DFL XSeg"],
+                                ["None", "DFL XSeg"],
                                 value="None",
                                 label="Face masking engine",
                             )

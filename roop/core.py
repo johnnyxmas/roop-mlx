@@ -487,4 +487,8 @@ def run() -> None:
     )
     if roop.globals.startup_args.server_share:
         roop.globals.CFG.server_share = True
+
+    from roop.inference import prewarm_sessions_async
+    prewarm_sessions_async()
+
     main.run()

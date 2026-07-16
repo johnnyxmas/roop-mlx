@@ -30,6 +30,12 @@ _COREML_MODELS = {
     "hyperswap_1c_256.onnx",
     "reswapper_128.onnx",
     "reswapper_256.onnx",
+    # Frame upscalers: x4 models are 1.2-1.7x faster on CoreML (bit-exact).
+    # real_esrgan_x2, deoldify and isnet stay on the MLX interpreter —
+    # x2 partitions poorly on CoreML (5x slower) and the other two fail
+    # CoreML compilation outright.
+    "real_esrgan_x4.onnx",
+    "lsdir_x4.onnx",
 }
 
 # Models that ran fp16 on the MLX interpreter before moving to CoreML;
@@ -62,6 +68,35 @@ def _create_coreml_session(model_path: str):
             "CPUExecutionProvider",
         ],
     )
+
+
+def prewarm_sessions_async():
+    """Warm the CoreML compile caches for the always-used models.
+
+    Runs in a daemon thread at app startup.  Sessions are created and
+    discarded; the win is CoreML's on-disk compiled-model cache (keyed by
+    model path), so the first real swap doesn't stall on compilation.
+    """
+    import threading
+
+    from roop.utilities import resolve_relative_path
+
+    def _warm():
+        for rel in (
+            "../models/yoloface_8n.onnx",
+            "../models/buffalo_l/w600k_r50.onnx",
+            "../models/buffalo_l/2d106det.onnx",
+            "../models/inswapper_128.onnx",
+        ):
+            try:
+                path = resolve_relative_path(rel)
+                if os.path.exists(path):
+                    sess = _create_coreml_session(path)
+                    del sess
+            except Exception:
+                return
+
+    threading.Thread(target=_warm, daemon=True, name="coreml-prewarm").start()
 
 
 def try_coreml_session(model_path: str):

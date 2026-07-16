@@ -772,17 +772,27 @@ class OnnxMLXSession:
     def _op_resize(self, node, values):
         x = self._v(values, node.input[0])
 
-        # Opset 11+: inputs are [X, roi, scales, sizes]
         scales = None
         sizes  = None
-        if len(node.input) > 2 and node.input[2]:
-            scales_arr = self._v(values, node.input[2])
+        if len(node.input) == 2:
+            # Opset 10: inputs are [X, scales]
+            scales_arr = self._v(values, node.input[1])
             if scales_arr is not None:
                 scales = [float(s) for s in np.array(scales_arr)]
-        if len(node.input) > 3 and node.input[3]:
-            sizes_arr = self._v(values, node.input[3])
-            if sizes_arr is not None:
-                sizes = [int(s) for s in np.array(sizes_arr)]
+        else:
+            # Opset 11+: inputs are [X, roi, scales, sizes]
+            if len(node.input) > 2 and node.input[2]:
+                scales_arr = self._v(values, node.input[2])
+                if scales_arr is not None:
+                    scales = [float(s) for s in np.array(scales_arr)]
+            if len(node.input) > 3 and node.input[3]:
+                sizes_arr = self._v(values, node.input[3])
+                if sizes_arr is not None:
+                    sizes = [int(s) for s in np.array(sizes_arr)]
+        if scales is None and sizes is None:
+            raise NotImplementedError(
+                f"Resize node without scales/sizes (inputs: {list(node.input)})"
+            )
 
         mode = self._attr(node, "mode", b"nearest")
         if isinstance(mode, bytes):
