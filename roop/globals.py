@@ -44,7 +44,6 @@ progress_status = {
     "active": False,
 }
 
-g_desired_face_analysis = None
 
 INPUT_FACESETS = []
 TARGET_FACES = []

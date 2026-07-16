@@ -17,11 +17,35 @@ def get_image_frame(filename: str):
     return None
 
 
+def open_video_capture(video_path: str) -> cv2.VideoCapture:
+    """Open *video_path* with the fastest correct backend.
+
+    AVFoundation decodes through VideoToolbox hardware (~2.5x faster for
+    4K HEVC) and honors colorspace flags, which OpenCV's default FFmpeg
+    backend does not (it always converts with BT.601).  Falls back to the
+    default backend for anything AVFoundation can't read (GIFs, exotic
+    containers).
+    """
+    cap = cv2.VideoCapture(video_path, cv2.CAP_AVFOUNDATION)
+    if cap.isOpened():
+        ok, frame = cap.read()
+        if (
+            ok
+            and frame is not None
+            and frame.size > 0
+            and cap.get(cv2.CAP_PROP_FRAME_COUNT) > 0
+        ):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            return cap
+        cap.release()
+    return cv2.VideoCapture(video_path)
+
+
 def _open_capture(video_path: str):
     """Open a VideoCapture and cache it."""
     global current_capture, current_video_path, current_frame_total
     release_video()
-    cap = cv2.VideoCapture(video_path)
+    cap = open_video_capture(video_path)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     current_capture = cap
     current_video_path = video_path
@@ -60,7 +84,8 @@ def release_video():
 
 
 def get_video_frame_total(video_path: str) -> int:
-    capture = cv2.VideoCapture(video_path)
+    # Same backend as the processing readers so frame counts stay consistent.
+    capture = open_video_capture(video_path)
     capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     video_frame_total = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
     capture.release()

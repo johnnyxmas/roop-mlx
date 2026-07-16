@@ -72,6 +72,7 @@ class YOLOFaceDetector:
         self._session = None
         self._recognition_session = None
         self._landmark_2d106_session = None
+        self._genderage_session = None
         self._input_name = None
         self._output_names = None
 
@@ -111,6 +112,16 @@ class YOLOFaceDetector:
         if not os.path.exists(model_path):
             return
         self._landmark_2d106_session = create_session(model_path)
+
+    def _ensure_genderage(self):
+        if self._genderage_session is not None:
+            return
+        from roop.inference import create_session
+
+        model_path = resolve_relative_path("../models/buffalo_l/genderage.onnx")
+        if not os.path.exists(model_path):
+            return
+        self._genderage_session = create_session(model_path)
 
     # -- preprocessing / postprocessing ------------------------------------
 
@@ -205,7 +216,7 @@ class YOLOFaceDetector:
     # -- public API ---------------------------------------------------------
 
     def detect(self, frame: np.ndarray, need_recognition: bool = False,
-               need_landmarks_106: bool = False):
+               need_landmarks_106: bool = False, need_genderage: bool = False):
         """Detect faces in *frame* (BGR image).
 
         Returns
@@ -227,6 +238,8 @@ class YOLOFaceDetector:
             self._compute_embeddings(frame, faces)
         if need_landmarks_106:
             self._compute_landmarks_106(frame, faces)
+        if need_genderage:
+            self._compute_genderage(frame, faces)
 
         faces.sort(key=lambda f: f.bbox[0])
         return faces
@@ -292,12 +305,45 @@ class YOLOFaceDetector:
             pred = trans_points(pred, IM)
             face.landmark_2d_106 = pred.astype(np.float32)
 
+    def _compute_genderage(self, frame: np.ndarray, faces: list):
+        """Run InsightFace genderage on each face to fill .sex and .age."""
+        self._ensure_genderage()
+        if self._genderage_session is None:
+            return
+        from roop.face_util import transform as face_transform
+
+        inp_name = self._genderage_session.get_inputs()[0].name
+        out_name = self._genderage_session.get_outputs()[0].name
+        input_size = 96
+
+        for face in faces:
+            if face.bbox is None:
+                continue
+            x1, y1, x2, y2 = face.bbox
+            w = x2 - x1
+            h = y2 - y1
+            center = ((x1 + x2) / 2, (y1 + y2) / 2)
+            _scale = input_size / (max(w, h) * 1.5)
+
+            aimg, _M = face_transform(frame, center, input_size, _scale, 0)
+            blob = cv2.dnn.blobFromImage(
+                aimg, 1.0, (input_size, input_size),
+                (0.0, 0.0, 0.0), swapRB=True,
+            )
+            pred = self._genderage_session.run(
+                [out_name], {inp_name: blob}
+            )[0][0]
+            # pred: [female_logit, male_logit, age/100]
+            face.sex = "M" if int(np.argmax(pred[:2])) == 1 else "F"
+            face.age = int(np.round(pred[2] * 100))
+
     # -- cleanup -----------------------------------------------------------
 
     def release(self):
         self._session = None
         self._recognition_session = None
         self._landmark_2d106_session = None
+        self._genderage_session = None
 
 
 # ---------------------------------------------------------------------------

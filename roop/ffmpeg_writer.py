@@ -140,13 +140,20 @@ class FFMPEG_VideoWriter:
         if bitrate is not None:
             cmd.extend(["-b", bitrate])
 
-        # scale to a resolution divisible by 2 if not even
+        # Convert BGR->YUV with the BT.709 matrix and tag the stream so
+        # players interpret it the same way it was encoded.  The readers
+        # (AVFoundation) hand us correctly-decoded RGB, so the writer must
+        # not fall back to swscale's untagged BT.601 default.  The scale
+        # also rounds odd dimensions down to even for yuv420p.
         cmd.extend(
             [
                 "-vf",
-                f"scale={w}:{h}"
-                if w != size[0] or h != size[1]
-                else "colorspace=bt709:iall=bt601-6-625:fast=1",
+                f"scale={w}:{h}:out_color_matrix=bt709:out_range=tv,"
+                "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+                "-colorspace", "bt709",
+                "-color_primaries", "bt709",
+                "-color_trc", "bt709",
+                "-color_range", "tv",
             ]
         )
 

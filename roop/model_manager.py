@@ -50,13 +50,9 @@ ALL_MODELS = [
     ("CLIP", "rd64-uni-refined.pth",
      ["https://huggingface.co/countfloyd/deepfake/resolve/main/rd64-uni-refined.pth"]),
 
-    # -- face detection / analysis (InsightFace buffalo_l) --
-    ("buffalo_l", "1k3d68.onnx",
-     ["https://huggingface.co/halllooo/buffalo_l/resolve/main/1k3d68.onnx"]),
+    # -- face analysis (InsightFace buffalo_l; detection itself is YOLO) --
     ("buffalo_l", "2d106det.onnx",
      ["https://huggingface.co/halllooo/buffalo_l/resolve/main/2d106det.onnx"]),
-    ("buffalo_l", "det_10g.onnx",
-     ["https://huggingface.co/halllooo/buffalo_l/resolve/main/det_10g.onnx"]),
     ("buffalo_l", "genderage.onnx",
      ["https://huggingface.co/halllooo/buffalo_l/resolve/main/genderage.onnx"]),
     ("buffalo_l", "w600k_r50.onnx",

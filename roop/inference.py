@@ -20,6 +20,7 @@ _COREML_MODELS = {
     "yoloface_8n.onnx",
     "w600k_r50.onnx",
     "2d106det.onnx",
+    "genderage.onnx",
     "GFPGANv1.4.onnx",
     "restoreformer_plus_plus.onnx",
     "CodeFormerv0.1.onnx",

@@ -48,7 +48,8 @@ def get_all_faces(frame: Frame) -> Any:
 
 
 def get_all_faces_fast(frame: Frame, need_recognition: bool = False,
-                       need_landmarks_106: bool = False) -> Any:
+                       need_landmarks_106: bool = False,
+                       need_genderage: bool = False) -> Any:
     """Detect faces without loading optional sub-models unless needed."""
     try:
         from roop.face_detector import get_yolo_detector
@@ -56,6 +57,7 @@ def get_all_faces_fast(frame: Frame, need_recognition: bool = False,
             frame,
             need_recognition=need_recognition,
             need_landmarks_106=need_landmarks_106,
+            need_genderage=need_genderage,
         )
     except NotImplementedError:
         raise

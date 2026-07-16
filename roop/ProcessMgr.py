@@ -129,15 +129,7 @@ class ProcessMgr:
         self._thread_local = thread_local()
         devicename = get_device()
 
-        roop.globals.g_desired_face_analysis = [
-            "landmark_3d_68",
-            "landmark_2d_106",
-            "detection",
-            "recognition",
-        ]
-        if options.swap_mode == "all_female" or options.swap_mode == "all_male":
-            roop.globals.g_desired_face_analysis.append("genderage")
-        elif options.swap_mode == "all_random":
+        if options.swap_mode == "all_random":
             # don't modify original list
             self.input_face_datas = input_faces.copy()
             shuffle_array(self.input_face_datas)
@@ -367,7 +359,8 @@ class ProcessMgr:
             print("No processor defined!")
             return
 
-        cap = cv2.VideoCapture(source_video)
+        from roop.capturer import open_video_capture
+        cap = open_video_capture(source_video)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         frame_count = (frame_end - frame_start) + 1
@@ -586,6 +579,10 @@ class ProcessMgr:
         """Return True if the current swap mode requires face matching."""
         return self.options.swap_mode in ("selected",)
 
+    def _needs_genderage(self):
+        """Return True if the current swap mode filters faces by gender."""
+        return self.options.swap_mode in ("all_female", "all_male")
+
     def _needs_landmarks_106(self):
         """Return True if any feature requires 106-point landmarks."""
         if self.options.restore_original_mouth:
@@ -614,6 +611,7 @@ class ProcessMgr:
                 frame,
                 need_recognition=self._needs_recognition(),
                 need_landmarks_106=self._needs_landmarks_106(),
+                need_genderage=self._needs_genderage(),
             )
 
         force_redetect = False
@@ -638,6 +636,7 @@ class ProcessMgr:
                 frame,
                 need_recognition=self._needs_recognition(),
                 need_landmarks_106=self._needs_landmarks_106(),
+                need_genderage=self._needs_genderage(),
             )
             tl.tracker_last_faces = faces
             tl.tracker_frames_since_detect = 0
@@ -657,6 +656,7 @@ class ProcessMgr:
             frame,
             need_recognition=self._needs_recognition(),
             need_landmarks_106=self._needs_landmarks_106(),
+            need_genderage=self._needs_genderage(),
         )
         tl.tracker_last_faces = faces
         tl.tracker_frames_since_detect = 0
