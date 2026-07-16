@@ -22,9 +22,9 @@ class Enhance_GFPGAN:
         if getattr(self, "_session", None) is not None:
             return
 
-        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
+        from roop.inference import create_session
         model_path = resolve_relative_path("../models/GFPGANv1.4.onnx")
-        self._session = OnnxMLXSession(model_path)
+        self._session = create_session(model_path)
 
     def Run(self, source_faceset: FaceSet, target_face: Face,
             temp_frame: Frame):

@@ -80,7 +80,7 @@ class YOLOFaceDetector:
     def _ensure_loaded(self):
         if self._session is not None:
             return
-        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
+        from roop.inference import create_session
 
         model_path = resolve_relative_path(f"../models/{self.MODEL_FILE}")
         if not os.path.exists(model_path):
@@ -88,29 +88,29 @@ class YOLOFaceDetector:
                 f"YOLO face model not found at {model_path}. "
                 "It should be downloaded during startup."
             )
-        self._session = OnnxMLXSession(model_path)
+        self._session = create_session(model_path)
         self._input_name  = self._session.get_inputs()[0].name
         self._output_names = [o.name for o in self._session.get_outputs()]
 
     def _ensure_recognition(self):
         if self._recognition_session is not None:
             return
-        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
+        from roop.inference import create_session
 
         model_path = resolve_relative_path("../models/buffalo_l/w600k_r50.onnx")
         if not os.path.exists(model_path):
             return
-        self._recognition_session = OnnxMLXSession(model_path)
+        self._recognition_session = create_session(model_path)
 
     def _ensure_landmark_2d106(self):
         if self._landmark_2d106_session is not None:
             return
-        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
+        from roop.inference import create_session
 
         model_path = resolve_relative_path("../models/buffalo_l/2d106det.onnx")
         if not os.path.exists(model_path):
             return
-        self._landmark_2d106_session = OnnxMLXSession(model_path)
+        self._landmark_2d106_session = create_session(model_path)
 
     # -- preprocessing / postprocessing ------------------------------------
 

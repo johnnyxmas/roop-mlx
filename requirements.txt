@@ -5,6 +5,11 @@
 # -- MLX --
 mlx>=0.20.0; sys_platform == "darwin" and platform_machine == "arm64"
 
+# -- onnxruntime for the CoreML execution provider: 2-4x faster than the
+# MLX interpreter for the detector stack and large enhancers (see
+# roop/inference.py for the per-model backend split).
+onnxruntime>=1.27,<2.0; sys_platform == "darwin" and platform_machine == "arm64"
+
 # -- core numerics / image / video --
 numpy>=2.0,<3.0
 opencv-python-headless==4.12.0.88

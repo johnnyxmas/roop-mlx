@@ -22,9 +22,9 @@ class Enhance_RestoreFormerPPlus:
         if getattr(self, "_session", None) is not None:
             return
 
-        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
+        from roop.inference import create_session
         model_path = resolve_relative_path("../models/restoreformer_plus_plus.onnx")
-        self._session = OnnxMLXSession(model_path)
+        self._session = create_session(model_path)
         self._output_name = self._session.get_outputs()[0].name
 
     def Run(self, source_faceset: FaceSet, target_face: Face,

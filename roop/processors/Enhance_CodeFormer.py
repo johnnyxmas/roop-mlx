@@ -23,9 +23,9 @@ class Enhance_CodeFormer:
         if getattr(self, "_session", None) is not None:
             return
 
-        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
+        from roop.inference import create_session
         model_path = resolve_relative_path("../models/CodeFormer/CodeFormerv0.1.onnx")
-        self._session = OnnxMLXSession(model_path)
+        self._session = create_session(model_path)
 
     def Run(self, source_faceset: FaceSet, target_face: Face,
             temp_frame: Frame):
@@ -37,7 +37,8 @@ class Enhance_CodeFormer:
         frame = (frame / 255.0 - 0.5) / 0.5
         frame = np.expand_dims(frame, 0).transpose(0, 3, 1, 2)  # [1,3,512,512]
 
-        w = np.array(fidelity, dtype=np.float32)
+        # The model declares w as double; onnxruntime enforces the type.
+        w = np.array(fidelity, dtype=np.float64)
         result = self._session.run(["y"], {"x": frame, "w": w})[0][0]  # [3,512,512]
 
         result = np.clip(result, -1.0, 1.0)
