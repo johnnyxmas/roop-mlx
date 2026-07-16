@@ -96,6 +96,91 @@ def run_ffmpeg(args: List[str]) -> bool:
     return False
 
 
+def _probe_duration_seconds(path: str):
+    """Total duration of *path* in seconds via ffprobe, or None on failure."""
+    try:
+        out = subprocess.check_output(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=nw=1:nk=1", path,
+            ],
+            stderr=subprocess.DEVNULL, timeout=15,
+        )
+        return float(out.decode().strip())
+    except Exception:
+        return None
+
+
+def _parse_ffmpeg_time(value: str):
+    """Parse an ffmpeg out_time value (HH:MM:SS.uuuuuu) into seconds."""
+    try:
+        hh, mm, ss = value.split(":")
+        return int(hh) * 3600 + int(mm) * 60 + float(ss)
+    except Exception:
+        return None
+
+
+def scale_video(
+    input_path: str,
+    output_path: str,
+    target_height: int = None,
+    target_fps: float = None,
+    on_progress=None,
+) -> bool:
+    """Re-encode *input_path*, optionally downscaling to *target_height* px tall
+    (aspect preserved, even width) and/or changing the frame rate to *target_fps*.
+
+    Uses h264_videotoolbox when available (Apple Silicon hardware encoder),
+    falling back to libx264 via resolve_codec("auto"). Audio is re-encoded to
+    AAC. Calls on_progress(0.0-1.0) if provided. Returns True on success.
+    """
+    codec = resolve_codec("auto")
+    quality = roop.globals.video_quality if roop.globals.video_quality else 18
+    duration = _probe_duration_seconds(input_path)
+
+    cmd = [
+        "ffmpeg", "-hide_banner", "-y",
+        "-loglevel", "error", "-i", input_path,
+    ]
+    if target_height:
+        cmd.extend(["-vf", f"scale=-2:{target_height}"])
+    if target_fps:
+        cmd.extend(["-r", str(target_fps)])
+    cmd.extend(["-c:v", codec])
+    cmd.extend(get_quality_args(codec, quality))
+    cmd.extend(["-c:a", "aac", "-progress", "pipe:1", "-nostats", output_path])
+
+    print("Running ffmpeg (re-encode)")
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            universal_newlines=True, bufsize=1,
+        )
+    except Exception:
+        print("Failed to start ffmpeg. Commandline:")
+        print(" ".join(cmd))
+        return False
+
+    try:
+        for line in proc.stdout:
+            line = line.strip()
+            if on_progress and duration and line.startswith("out_time="):
+                secs = _parse_ffmpeg_time(line.split("=", 1)[1])
+                if secs is not None:
+                    on_progress(max(0.0, min(0.99, secs / duration)))
+            elif line == "progress=end" and on_progress:
+                on_progress(1.0)
+    finally:
+        proc.wait()
+
+    ok = proc.returncode == 0 and os.path.exists(output_path)
+    if not ok:
+        print("ffmpeg re-encode failed. Commandline:")
+        print(" ".join(cmd))
+    return ok
+
+
 def cut_video(
     original_video: str,
     cut_video: str,

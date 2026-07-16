@@ -65,10 +65,13 @@ def pre_check() -> bool:
         )
         return False
 
-    from roop.model_manager import download_all_models
+    from roop.model_manager import download_all_models, verify_all_models
 
     update_status("Checking / downloading models...")
     download_all_models()
+
+    update_status("Verifying model integrity...")
+    verify_all_models()
 
     if not shutil.which("ffmpeg"):
         update_status("ffmpeg is not installed.")

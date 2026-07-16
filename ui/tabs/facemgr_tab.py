@@ -37,7 +37,7 @@ def facemgr_tab() -> None:
         with gr.Row():
             frame_num_fst = gr.Slider(
                 1,
-                1,
+                2,
                 value=1,
                 label="Frame Number",
                 info="0:00:00",
@@ -193,7 +193,7 @@ def display_video_frame(
     if total > 0:
         return gr.Image(
             value=util.convert_to_gradio(current_frame), interactive=True
-        ), gr.Slider(info=timeinfo, minimum=1, maximum=total, interactive=True)
+        ), gr.Slider(info=timeinfo, minimum=1, maximum=max(2, total), interactive=True)
     return gr.Image(
         value=util.convert_to_gradio(current_frame), interactive=True
     ), gr.Slider(info=timeinfo, interactive=True)

@@ -784,18 +784,6 @@ class ProcessMgr:
 
         return None
 
-    def auto_rotate_frame(self, original_face, frame: Frame):
-        target_face = original_face
-
-        rotation_action = self.rotation_action(original_face, frame)
-
-        if rotation_action == "rotate_anticlockwise":
-            frame = rotate_anticlockwise(frame)
-        elif rotation_action == "rotate_clockwise":
-            frame = rotate_clockwise(frame)
-
-        return target_face, frame, rotation_action
-
     def auto_unrotate_frame(self, frame: Frame, rotation_action):
         if rotation_action == "rotate_anticlockwise":
             return rotate_clockwise(frame)
