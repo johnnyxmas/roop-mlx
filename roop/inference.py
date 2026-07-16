@@ -24,6 +24,22 @@ _COREML_MODELS = {
     "GFPGANv1.4.onnx",
     "restoreformer_plus_plus.onnx",
     "CodeFormerv0.1.onnx",
+    "inswapper_128.onnx",
+    "hyperswap_1a_256.onnx",
+    "hyperswap_1b_256.onnx",
+    "hyperswap_1c_256.onnx",
+    "reswapper_128.onnx",
+    "reswapper_256.onnx",
+}
+
+# Models that ran fp16 on the MLX interpreter before moving to CoreML;
+# keep that dtype if the CoreML session ever falls back to MLX.
+_MLX_FP16_MODELS = {
+    "hyperswap_1a_256.onnx",
+    "hyperswap_1b_256.onnx",
+    "hyperswap_1c_256.onnx",
+    "reswapper_128.onnx",
+    "reswapper_256.onnx",
 }
 
 
@@ -48,13 +64,25 @@ def _create_coreml_session(model_path: str):
     )
 
 
+def try_coreml_session(model_path: str):
+    """Return a CoreML EP session, or None if unavailable."""
+    try:
+        return _create_coreml_session(model_path)
+    except Exception as e:
+        print(f"CoreML session failed for {os.path.basename(model_path)} ({e})")
+        return None
+
+
 def create_session(model_path: str):
     """Return the fastest verified inference session for *model_path*."""
     name = os.path.basename(model_path)
     if name in _COREML_MODELS:
-        try:
-            return _create_coreml_session(model_path)
-        except Exception as e:
-            print(f"CoreML session failed for {name} ({e}); using MLX interpreter")
+        sess = try_coreml_session(model_path)
+        if sess is not None:
+            return sess
+        print(f"Falling back to MLX interpreter for {name}")
     from roop.mlx_runtime.onnx_loader import OnnxMLXSession
+    if name in _MLX_FP16_MODELS:
+        import mlx.core as mx
+        return OnnxMLXSession(model_path, dtype=mx.float16)
     return OnnxMLXSession(model_path)

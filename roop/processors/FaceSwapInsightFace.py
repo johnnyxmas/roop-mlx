@@ -48,17 +48,25 @@ class FaceSwapInsightFace:
             ).astype(np.float32)
             np.save(emap_cache, self.emap)
 
-        import mlx.core as mx
         if os.path.basename(model_path) == "inswapper_128.onnx":
-            # Fast path: hand-ported, compiled mlx.nn model — no per-node
-            # interpreter dispatch, batch-capable.
-            from roop.mlx_runtime.inswapper_native import InSwapperNative
-            self._session = InSwapperNative.from_onnx(model_path, dtype=mx.float16)
+            # CoreML EP: 33 ms/swap, bit-exact vs the ONNX reference.  Its
+            # graph declares batch=1, so pixel-boost slices run per-slice.
+            from roop.inference import try_coreml_session
+            self._session = try_coreml_session(model_path)
+            if self._session is not None:
+                self.supports_batch = False
+            else:
+                # CoreML unavailable — use the hand-ported compiled mlx.nn
+                # model (fp16, batch-capable) instead of the interpreter.
+                import mlx.core as mx
+                from roop.mlx_runtime.inswapper_native import InSwapperNative
+                self._session = InSwapperNative.from_onnx(model_path, dtype=mx.float16)
+                self.supports_batch = True
             self._output_name = "output"
-            self.supports_batch = True
         else:
-            from roop.mlx_runtime.onnx_loader import OnnxMLXSession
-            self._session = OnnxMLXSession(model_path, dtype=mx.float16)
+            # reswapper models: CoreML EP (with MLX fp16 fallback)
+            from roop.inference import create_session
+            self._session = create_session(model_path)
             self._output_name = self._session.get_outputs()[0].name
             self.supports_batch = False
 

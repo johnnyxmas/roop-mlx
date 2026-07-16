@@ -58,7 +58,7 @@ class FaceSwapFaceFusion:
         if getattr(self, "_session", None) is not None:
             return
 
-        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
+        from roop.inference import create_session
 
         modelname = plugin_options.get("modelname", "HyperSwap 1B")
         config = self.FACE_SWAPPER_MODELS[modelname]
@@ -68,8 +68,7 @@ class FaceSwapFaceFusion:
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"HyperSwap model not found: {model_path}")
 
-        import mlx.core as mx
-        self._session = OnnxMLXSession(model_path, dtype=mx.float16)
+        self._session = create_session(model_path)
         self._output_name = self._session.get_outputs()[0].name
 
     def Run(self, source_faceset, target_face: Face, temp_frame: Frame) -> Frame:

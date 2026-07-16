@@ -70,23 +70,22 @@ def _np_to_mx(arr: np.ndarray) -> mx.array:
     return mx.array(arr)
 
 
-def _attr(node, name, default=None):
-    for a in node.attribute:
-        if a.name == name:
-            t = a.type
-            if t == onnx.AttributeProto.FLOAT:
-                return a.f
-            if t == onnx.AttributeProto.INT:
-                return a.i
-            if t == onnx.AttributeProto.STRING:
-                return a.s
-            if t == onnx.AttributeProto.TENSOR:
-                return numpy_helper.to_array(a.t)
-            if t == onnx.AttributeProto.FLOATS:
-                return list(a.floats)
-            if t == onnx.AttributeProto.INTS:
-                return list(a.ints)
-    return default
+def _attr_value(a):
+    """Parse one AttributeProto into a Python value."""
+    t = a.type
+    if t == onnx.AttributeProto.FLOAT:
+        return a.f
+    if t == onnx.AttributeProto.INT:
+        return a.i
+    if t == onnx.AttributeProto.STRING:
+        return a.s
+    if t == onnx.AttributeProto.TENSOR:
+        return numpy_helper.to_array(a.t)
+    if t == onnx.AttributeProto.FLOATS:
+        return list(a.floats)
+    if t == onnx.AttributeProto.INTS:
+        return list(a.ints)
+    return None
 
 
 # mirrors onnxruntime.NodeArg
@@ -153,8 +152,17 @@ class OnnxMLXSession:
             OnnxMLXSession._metal_configured = True
 
         self._dtype = dtype
+        # Per-node parsed attributes, filled lazily on first access so
+        # run() never re-scans protobuf attribute lists per frame.
+        self._attr_cache: dict[int, dict] = {}
         model = onnx.load(model_path)
         graph = model.graph
+
+        # Pin one Python wrapper per node.  protobuf's C backend creates
+        # transient wrappers on every `graph.node` iteration, which would
+        # make the id()-keyed attribute cache collide — and re-creating
+        # wrappers per frame costs time in run() anyway.
+        self._nodes = list(graph.node)
 
         # Extract weights as MLX arrays, then immediately free the serialized
         # bytes from the protobuf so the ONNX file data is not held in Python
@@ -177,16 +185,16 @@ class OnnxMLXSession:
         # mx.array() on every single inference call (one per frame per face).
         # Storing them in self._weights means run() just copies the reference.
         _float_dtype = dtype if dtype in (mx.float16, mx.float32) else mx.float32
-        for node in graph.node:
+        for node in self._nodes:
             if node.op_type != "Constant" or not node.output or not node.output[0]:
                 continue
             out_name = node.output[0]
-            val_attr = _attr(node, "value", None)
+            val_attr = self._attr(node, "value", None)
             if val_attr is not None:
                 self._weights[out_name] = _np_to_mx(val_attr)
             else:
-                fval = _attr(node, "value_float", None)
-                ival = _attr(node, "value_int", None)
+                fval = self._attr(node, "value_float", None)
+                ival = self._attr(node, "value_int", None)
                 if fval is not None:
                     self._weights[out_name] = mx.array(fval, dtype=_float_dtype)
                 elif ival is not None:
@@ -218,7 +226,7 @@ class OnnxMLXSession:
         # Precompute last-use index for each non-weight value so run() can
         # delete intermediate activations the moment they're no longer needed.
         self._last_use: dict[str, int] = {}
-        for i, node in enumerate(graph.node):
+        for i, node in enumerate(self._nodes):
             for inp in node.input:
                 if inp:
                     self._last_use[inp] = i
@@ -303,8 +311,33 @@ class OnnxMLXSession:
             "ReduceL2":           self._op_reduce_l2,
         }
 
-        n_nodes = sum(1 for n in graph.node if n.op_type != "Constant")
+        n_nodes = sum(1 for n in self._nodes if n.op_type != "Constant")
         self._eval_after = self._EVAL_AFTER_OPS if n_nodes >= 800 else frozenset()
+
+        # Pre-transpose 2-D conv weights to MLX's OHWI layout at load time
+        # instead of once per node per frame.  Only weights whose every use
+        # is a Conv weight input can be converted in place.
+        weight_uses: dict[str, set] = {}
+        for node in self._nodes:
+            for pos, inp in enumerate(node.input):
+                if inp in self._weights:
+                    weight_uses.setdefault(inp, set()).add((node.op_type, pos))
+        self._conv_w_ohwi: set[str] = set()
+        for wname, uses in weight_uses.items():
+            if uses == {("Conv", 1)} and self._weights[wname].ndim == 4:
+                self._weights[wname] = mx.transpose(self._weights[wname], [0, 2, 3, 1])
+                self._conv_w_ohwi.add(wname)
+        if self._conv_w_ohwi:
+            mx.eval(*[self._weights[n] for n in self._conv_w_ohwi])
+
+    def _attr(self, node, name, default=None):
+        """Cached ONNX attribute lookup (parsed once per node, not per run)."""
+        cached = self._attr_cache.get(id(node))
+        if cached is None:
+            cached = {a.name: _attr_value(a) for a in node.attribute}
+            self._attr_cache[id(node)] = cached
+        val = cached.get(name)
+        return default if val is None else val
 
     def get_inputs(self) -> list[_NodeArg]:
         return self._inputs_meta
@@ -338,7 +371,7 @@ class OnnxMLXSession:
             for k, v in input_feed.items():
                 values[k] = _np_to_mx(np.asarray(v))
 
-            for i, node in enumerate(self._graph.node):
+            for i, node in enumerate(self._nodes):
                 op = node.op_type
                 if op == "Constant":
                     continue
@@ -392,11 +425,11 @@ class OnnxMLXSession:
         w = self._v(values, node.input[1])
         b = self._v(values, node.input[2]) if len(node.input) > 2 and node.input[2] else None
 
-        strides   = list(_attr(node, "strides",   [1, 1]))
-        pads      = list(_attr(node, "pads",      [0, 0, 0, 0]))
-        dilations = list(_attr(node, "dilations", [1, 1]))
-        groups    = _attr(node, "group",     1)
-        auto_pad  = _attr(node, "auto_pad",  b"NOTSET")
+        strides   = list(self._attr(node, "strides",   [1, 1]))
+        pads      = list(self._attr(node, "pads",      [0, 0, 0, 0]))
+        dilations = list(self._attr(node, "dilations", [1, 1]))
+        groups    = self._attr(node, "group",     1)
+        auto_pad  = self._attr(node, "auto_pad",  b"NOTSET")
 
         if x.ndim == 3:
             # 1-D convolution: input [N, C, L] → MLX needs [N, L, C]
@@ -429,9 +462,13 @@ class OnnxMLXSession:
         else:
             padding = pads[0]  # symmetric; ONNX guarantees pads[0]==pads[2]
 
-        # NCHW → NHWC for input; OIHW → OHWI for weight
+        # NCHW → NHWC for input; OIHW → OHWI for weight (pre-transposed at
+        # load time for static weights, converted here only for dynamic ones)
         x_nhwc = self._to_nhwc(x)
-        w_ohwi = mx.transpose(w, [0, 2, 3, 1])
+        if node.input[1] in self._conv_w_ohwi:
+            w_ohwi = w
+        else:
+            w_ohwi = mx.transpose(w, [0, 2, 3, 1])
 
         out = mx.conv2d(
             x_nhwc, w_ohwi,
@@ -449,10 +486,10 @@ class OnnxMLXSession:
         B = self._v(values, node.input[1])
         C = self._v(values, node.input[2]) if len(node.input) > 2 and node.input[2] else None
 
-        alpha  = _attr(node, "alpha",  1.0)
-        beta   = _attr(node, "beta",   1.0)
-        transA = _attr(node, "transA", 0)
-        transB = _attr(node, "transB", 0)
+        alpha  = self._attr(node, "alpha",  1.0)
+        beta   = self._attr(node, "beta",   1.0)
+        transA = self._attr(node, "transA", 0)
+        transB = self._attr(node, "transB", 0)
 
         if transA:
             A = mx.transpose(A)
@@ -475,7 +512,7 @@ class OnnxMLXSession:
         bias  = self._v(values, node.input[2])
         mean  = self._v(values, node.input[3])
         var   = self._v(values, node.input[4])
-        eps   = _attr(node, "epsilon", 1e-5)
+        eps   = self._attr(node, "epsilon", 1e-5)
 
         if x.ndim == 4:
             # NCHW: broadcast over N,H,W
@@ -498,7 +535,7 @@ class OnnxMLXSession:
 
     def _op_leakyrelu(self, node, values):
         x     = self._v(values, node.input[0])
-        alpha = _attr(node, "alpha", 0.01)
+        alpha = self._attr(node, "alpha", 0.01)
         values[node.output[0]] = mx.where(x >= 0, x, alpha * x)
 
     def _op_relu(self, node, values):
@@ -546,9 +583,9 @@ class OnnxMLXSession:
         mn  = self._v(values, node.input[1]) if len(node.input) > 1 and node.input[1] else None
         mx_ = self._v(values, node.input[2]) if len(node.input) > 2 and node.input[2] else None
         if mn is None:
-            mn = _attr(node, "min", None)
+            mn = self._attr(node, "min", None)
         if mx_ is None:
-            mx_ = _attr(node, "max", None)
+            mx_ = self._attr(node, "max", None)
         if mn is not None:
             mn = float(np.array(mn))
             x = mx.maximum(x, mn)
@@ -559,8 +596,8 @@ class OnnxMLXSession:
 
     def _op_reducemean(self, node, values):
         x        = self._v(values, node.input[0])
-        axes     = _attr(node, "axes", None)
-        keepdims = bool(_attr(node, "keepdims", 1))
+        axes     = self._attr(node, "axes", None)
+        keepdims = bool(self._attr(node, "keepdims", 1))
         if axes is None and len(node.input) > 1 and node.input[1]:
             axes_arr = self._v(values, node.input[1])
             axes = [int(a) for a in np.array(axes_arr)]
@@ -578,17 +615,17 @@ class OnnxMLXSession:
 
     def _op_concat(self, node, values):
         inputs = [self._v(values, n) for n in node.input]
-        axis   = _attr(node, "axis", 0)
+        axis   = self._attr(node, "axis", 0)
         values[node.output[0]] = mx.concatenate(inputs, axis=axis)
 
     def _op_split(self, node, values):
         x    = self._v(values, node.input[0])
-        axis = _attr(node, "axis", 0)
+        axis = self._attr(node, "axis", 0)
         if len(node.input) > 1 and node.input[1]:
             split_arr = self._v(values, node.input[1])
             split = [int(s) for s in np.array(split_arr)]
         else:
-            split = _attr(node, "split", None)
+            split = self._attr(node, "split", None)
 
         if split is None:
             n_out = len(node.output)
@@ -635,7 +672,7 @@ class OnnxMLXSession:
             axes_t = self._v(values, node.input[1])
             axes = sorted([int(a) for a in np.array(axes_t)])
         else:
-            axes = sorted(_attr(node, "axes", [0]))
+            axes = sorted(self._attr(node, "axes", [0]))
         for ax in axes:
             x = mx.expand_dims(x, ax)
         values[node.output[0]] = x
@@ -646,14 +683,14 @@ class OnnxMLXSession:
             axes = sorted([int(a) for a in np.array(self._v(values, node.input[1]))],
                           reverse=True)
         else:
-            axes = sorted(_attr(node, "axes", []), reverse=True)
+            axes = sorted(self._attr(node, "axes", []), reverse=True)
         for ax in axes:
             x = mx.squeeze(x, ax)
         values[node.output[0]] = x
 
     def _op_flatten(self, node, values):
         x    = self._v(values, node.input[0])
-        axis = _attr(node, "axis", 1)
+        axis = self._attr(node, "axis", 1)
         if axis < 0:
             axis = x.ndim + axis
         outer = 1
@@ -666,28 +703,28 @@ class OnnxMLXSession:
 
     def _op_shape(self, node, values):
         x = self._v(values, node.input[0])
-        start = _attr(node, "start", 0)
-        end   = _attr(node, "end", None)
+        start = self._attr(node, "start", 0)
+        end   = self._attr(node, "end", None)
         shape = list(x.shape)
         shape_slice = shape[start:end]
         values[node.output[0]] = mx.array(shape_slice, dtype=mx.int32)
 
     def _op_cast(self, node, values):
         x   = self._v(values, node.input[0])
-        to  = _attr(node, "to", TensorProto.FLOAT)
+        to  = self._attr(node, "to", TensorProto.FLOAT)
         dst = _ONNX_TO_MLX_DTYPE.get(to, mx.float32)
         values[node.output[0]] = x.astype(dst)
 
     def _op_constant(self, node, values):
-        val = _attr(node, "value", None)
+        val = self._attr(node, "value", None)
         if val is not None:
             values[node.output[0]] = _np_to_mx(val)
         else:
             # float/int scalar attributes — respect model dtype so fp16 models
             # don't upcast every broadcast op that uses this constant.
             _fdtype = self._dtype if self._dtype in (mx.float16, mx.float32) else mx.float32
-            fval = _attr(node, "value_float", None)
-            ival = _attr(node, "value_int", None)
+            fval = self._attr(node, "value_float", None)
+            ival = self._attr(node, "value_int", None)
             if fval is not None:
                 values[node.output[0]] = mx.array(fval, dtype=_fdtype)
             elif ival is not None:
@@ -695,9 +732,9 @@ class OnnxMLXSession:
 
     def _op_maxpool(self, node, values):
         x          = self._v(values, node.input[0])
-        ks      = _attr(node, "kernel_shape", [1, 1])
-        strides = _attr(node, "strides", [1, 1])
-        pads    = _attr(node, "pads", [0, 0, 0, 0])
+        ks      = self._attr(node, "kernel_shape", [1, 1])
+        strides = self._attr(node, "strides", [1, 1])
+        pads    = self._attr(node, "pads", [0, 0, 0, 0])
 
         pad_h = pads[0]  # assume symmetric
         pad_w = pads[1]
@@ -713,9 +750,9 @@ class OnnxMLXSession:
 
     def _op_avgpool(self, node, values):
         x       = self._v(values, node.input[0])
-        ks      = _attr(node, "kernel_shape", [1, 1])
-        strides = _attr(node, "strides", [1, 1])
-        pads    = _attr(node, "pads", [0, 0, 0, 0])
+        ks      = self._attr(node, "kernel_shape", [1, 1])
+        strides = self._attr(node, "strides", [1, 1])
+        pads    = self._attr(node, "pads", [0, 0, 0, 0])
 
         x_nhwc = self._to_nhwc(x)
         pool   = mlx_nn.AvgPool2d(
@@ -747,7 +784,7 @@ class OnnxMLXSession:
             if sizes_arr is not None:
                 sizes = [int(s) for s in np.array(sizes_arr)]
 
-        mode = _attr(node, "mode", b"nearest")
+        mode = self._attr(node, "mode", b"nearest")
         if isinstance(mode, bytes):
             mode = mode.decode()
 
@@ -817,7 +854,7 @@ class OnnxMLXSession:
             pads_t = self._v(values, node.input[1])
             pads   = [int(p) for p in np.array(pads_t)]
         else:
-            pads = _attr(node, "pads", [0] * (2 * x.ndim))
+            pads = self._attr(node, "pads", [0] * (2 * x.ndim))
 
         const_val = 0.0
         if len(node.input) > 2 and node.input[2]:
@@ -825,7 +862,7 @@ class OnnxMLXSession:
             if cv is not None:
                 const_val = float(np.array(cv))
 
-        mode = _attr(node, "mode", b"constant")
+        mode = self._attr(node, "mode", b"constant")
         if isinstance(mode, bytes):
             mode = mode.decode()
 
@@ -839,7 +876,7 @@ class OnnxMLXSession:
 
     def _op_transpose(self, node, values):
         x    = self._v(values, node.input[0])
-        perm = _attr(node, "perm", None)
+        perm = self._attr(node, "perm", None)
         if perm is None:
             perm = list(range(x.ndim - 1, -1, -1))
         values[node.output[0]] = mx.transpose(x, perm)
@@ -855,7 +892,7 @@ class OnnxMLXSession:
     def _op_gather(self, node, values):
         x       = self._v(values, node.input[0])
         indices = self._v(values, node.input[1])
-        axis    = _attr(node, "axis", 0)
+        axis    = self._attr(node, "axis", 0)
         values[node.output[0]] = mx.take(x, indices.astype(mx.int32), axis=axis)
 
     @staticmethod
@@ -879,7 +916,7 @@ class OnnxMLXSession:
 
     def _op_softmax(self, node, values):
         x    = self._v(values, node.input[0])
-        axis = _attr(node, "axis", -1)
+        axis = self._attr(node, "axis", -1)
         values[node.output[0]] = mx.softmax(x, axis=axis)
 
     def _op_reciprocal(self, node, values):
@@ -903,10 +940,10 @@ class OnnxMLXSession:
         w = self._v(values, node.input[1])
         b = self._v(values, node.input[2]) if len(node.input) > 2 and node.input[2] else None
 
-        strides   = _attr(node, "strides",          [1, 1])
-        pads      = _attr(node, "pads",              [0, 0, 0, 0])
-        groups    = _attr(node, "group",             1)
-        out_pads  = _attr(node, "output_padding",    [0, 0])
+        strides   = self._attr(node, "strides",          [1, 1])
+        pads      = self._attr(node, "pads",              [0, 0, 0, 0])
+        groups    = self._attr(node, "group",             1)
+        out_pads  = self._attr(node, "output_padding",    [0, 0])
 
         # ONNX ConvTranspose pads = output crop amounts: [h_beg, w_beg, h_end, w_end]
         # Run with no padding then crop manually to support asymmetric pads.
@@ -943,30 +980,30 @@ class OnnxMLXSession:
 
     def _op_reducesum(self, node, values):
         x        = self._v(values, node.input[0])
-        keepdims = bool(_attr(node, "keepdims", 1))
+        keepdims = bool(self._attr(node, "keepdims", 1))
         if len(node.input) > 1 and node.input[1]:
             axes_arr = self._v(values, node.input[1])
             axes = [int(a) for a in np.array(axes_arr)]
         else:
-            axes = _attr(node, "axes", None)
+            axes = self._attr(node, "axes", None)
         if axes is not None and len(axes) == 0:
             axes = None
         values[node.output[0]] = mx.sum(x, axis=axes, keepdims=keepdims)
 
     def _op_reducemax(self, node, values):
         x        = self._v(values, node.input[0])
-        keepdims = bool(_attr(node, "keepdims", 1))
+        keepdims = bool(self._attr(node, "keepdims", 1))
         if len(node.input) > 1 and node.input[1]:
             axes_arr = self._v(values, node.input[1])
             axes = [int(a) for a in np.array(axes_arr)]
         else:
-            axes = _attr(node, "axes", None)
+            axes = self._attr(node, "axes", None)
         values[node.output[0]] = mx.max(x, axis=axes, keepdims=keepdims)
 
     def _op_constant_of_shape(self, node, values):
         shape_arr = self._v(values, node.input[0])
         shape = [int(s) for s in np.array(shape_arr)]
-        val_attr = _attr(node, "value", None)
+        val_attr = self._attr(node, "value", None)
         if val_attr is not None:
             fill_val = float(val_attr.flat[0])
             dtype = _ONNX_TO_MLX_DTYPE.get(
@@ -1031,7 +1068,7 @@ class OnnxMLXSession:
         x     = self._v(values, node.input[0])   # [N, C, d1, ..., dn]
         scale = self._v(values, node.input[1])   # [C]
         bias  = self._v(values, node.input[2])   # [C]
-        eps   = _attr(node, "epsilon", 1e-5)
+        eps   = self._attr(node, "epsilon", 1e-5)
 
         # Normalise over all spatial axes (everything beyond [N, C])
         spatial_axes = tuple(range(2, x.ndim))
@@ -1046,18 +1083,18 @@ class OnnxMLXSession:
 
     def _op_reduceprod(self, node, values):
         x        = self._v(values, node.input[0])
-        keepdims = bool(_attr(node, "keepdims", 1))
+        keepdims = bool(self._attr(node, "keepdims", 1))
         if len(node.input) > 1 and node.input[1]:
             axes = [int(a) for a in np.array(self._v(values, node.input[1]))]
         else:
-            axes = _attr(node, "axes", None)
+            axes = self._attr(node, "axes", None)
         values[node.output[0]] = mx.prod(x, axis=axes, keepdims=keepdims)
 
     def _op_scatter_elements(self, node, values):
         data    = self._v(values, node.input[0])
         indices = self._v(values, node.input[1])
         updates = self._v(values, node.input[2])
-        axis = _attr(node, "axis", 0)
+        axis = self._attr(node, "axis", 0)
         arr  = np.array(data)
         idx = np.array(indices).astype(np.intp)
         upd = np.array(updates)
@@ -1068,9 +1105,9 @@ class OnnxMLXSession:
         x    = self._v(values, node.input[0])
         k_t  = self._v(values, node.input[1])
         k    = int(np.array(k_t))
-        axis = _attr(node, "axis", -1)
-        largest = bool(_attr(node, "largest", 1))
-        sorted_ = bool(_attr(node, "sorted", 1))
+        axis = self._attr(node, "axis", -1)
+        largest = bool(self._attr(node, "largest", 1))
+        sorted_ = bool(self._attr(node, "sorted", 1))
 
         arr = np.array(x)
         if largest:
@@ -1089,21 +1126,21 @@ class OnnxMLXSession:
 
     def _op_argmin(self, node, values):
         x        = self._v(values, node.input[0])
-        axis     = _attr(node, "axis", 0)
-        keepdims = bool(_attr(node, "keepdims", 1))
+        axis     = self._attr(node, "axis", 0)
+        keepdims = bool(self._attr(node, "keepdims", 1))
         values[node.output[0]] = mx.argmin(x, axis=axis, keepdims=keepdims)
 
     def _op_argmax(self, node, values):
         x        = self._v(values, node.input[0])
-        axis     = _attr(node, "axis", 0)
-        keepdims = bool(_attr(node, "keepdims", 1))
+        axis     = self._attr(node, "axis", 0)
+        keepdims = bool(self._attr(node, "keepdims", 1))
         values[node.output[0]] = mx.argmax(x, axis=axis, keepdims=keepdims)
 
     def _op_cumsum(self, node, values):
         x    = self._v(values, node.input[0])
         axis = int(np.array(self._v(values, node.input[1])))
-        exclusive = bool(_attr(node, "exclusive", 0))
-        reverse   = bool(_attr(node, "reverse", 0))
+        exclusive = bool(self._attr(node, "exclusive", 0))
+        reverse   = bool(self._attr(node, "reverse", 0))
         arr = np.array(x)
         if reverse:
             arr = np.flip(arr, axis=axis)
@@ -1143,13 +1180,13 @@ class OnnxMLXSession:
     def _op_gather_elements(self, node, values):
         x       = self._v(values, node.input[0])
         indices = self._v(values, node.input[1])
-        axis    = _attr(node, "axis", 0)
+        axis    = self._attr(node, "axis", 0)
         arr = np.array(x)
         idx = np.array(indices).astype(np.intp)
         values[node.output[0]] = _np_to_mx(np.take_along_axis(arr, idx, axis=axis))
 
     def _op_einsum(self, node, values):
-        equation = _attr(node, "equation", b"").decode()
+        equation = self._attr(node, "equation", b"").decode()
         inputs   = [np.array(self._v(values, n)) for n in node.input]
         values[node.output[0]] = _np_to_mx(np.einsum(equation, *inputs))
 
@@ -1184,14 +1221,14 @@ class OnnxMLXSession:
 
     def _op_hard_sigmoid(self, node, values):
         x     = self._v(values, node.input[0])
-        alpha = _attr(node, "alpha", 0.2)
-        beta  = _attr(node, "beta",  0.5)
+        alpha = self._attr(node, "alpha", 0.2)
+        beta  = self._attr(node, "beta",  0.5)
         values[node.output[0]] = mx.clip(alpha * x + beta, 0.0, 1.0)
 
     def _op_depth_to_space(self, node, values):
         x         = self._v(values, node.input[0])   # [N, C, H, W]
-        blocksize = _attr(node, "blocksize", 2)
-        mode      = _attr(node, "mode", b"DCR")
+        blocksize = self._attr(node, "blocksize", 2)
+        mode      = self._attr(node, "mode", b"DCR")
         if isinstance(mode, bytes):
             mode = mode.decode()
         N, C, H, W = x.shape
@@ -1206,9 +1243,9 @@ class OnnxMLXSession:
 
     def _op_reduce_l2(self, node, values):
         x        = self._v(values, node.input[0])
-        keepdims = bool(_attr(node, "keepdims", 1))
+        keepdims = bool(self._attr(node, "keepdims", 1))
         if len(node.input) > 1 and node.input[1]:
             axes = [int(a) for a in np.array(self._v(values, node.input[1]))]
         else:
-            axes = _attr(node, "axes", None)
+            axes = self._attr(node, "axes", None)
         values[node.output[0]] = mx.sqrt(mx.sum(x * x, axis=axes, keepdims=keepdims))
