@@ -121,7 +121,8 @@ All settings are stored in `config.yaml` and editable from the **⚙ Settings** 
 | **Video Output Format** | Container format. `mp4`: most compatible. `mkv`: best for unusual codec/audio combinations. `avi`: legacy. `webm`: pairs with libvpx-vp9. |
 | **Video Quality** | Quality value. For `libx264` / `libx265` this is CRF (lower = higher quality, default 14, typical 18–28). For VideoToolbox this is `-q:v` (higher = better). |
 | **Use OS temp folder** | Store extracted frames in the OS temp directory instead of the project folder. Helpful when your project drive is small. Temp files are cleared on reboot or via the Clean temp folder button. |
-| **Show video in browser** | Re-encode the final video for in-browser playback. Adds an extra encode pass — disable if you don't need browser preview. |
+| **Show video in browser** | Play the finished video in the results panel. When off, a still frame is shown instead. |
+| **Re-encode unplayable video for preview** | Off by default. Some codec/container choices (libx265, HEVC, mkv, avi, or an exotic audio track copied from the source) produce files browsers cannot play, and the results panel falls back to a still frame. Enable this to re-encode a temporary H.264 copy into the temp folder purely for preview — the saved output file is never modified. Costs a full extra encode pass, which is why it is opt-in. |
 
 ---
 

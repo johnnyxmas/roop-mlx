@@ -149,10 +149,19 @@ def settings_tab():
                     )
                     settings_controls.append(
                         gr.Checkbox(
-                            label="Show video in browser (re-encodes output)",
-                            info="Preview the finished video in the browser. This re-encodes the file, which adds extra processing time.",
+                            label="Show video in browser",
+                            info="Play the finished video in the results panel. When off, a still frame is shown instead.",
                             value=roop.globals.CFG.output_show_video,
                             elem_id="output_show_video",
+                            interactive=True,
+                        )
+                    )
+                    settings_controls.append(
+                        gr.Checkbox(
+                            label="Re-encode unplayable video for preview",
+                            info="Some codec/container choices (libx265, HEVC, mkv, avi) produce files browsers cannot play, so the results panel falls back to a still frame. Enable this to re-encode a temporary H.264 copy for preview instead. The saved output file is never modified, and this adds a full encode pass.",
+                            value=roop.globals.CFG.output_reencode_preview,
+                            elem_id="output_reencode_preview",
                             interactive=True,
                         )
                     )

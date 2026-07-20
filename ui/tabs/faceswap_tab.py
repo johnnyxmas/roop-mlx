@@ -1743,12 +1743,42 @@ def get_gradio_output_format():
 
 def display_output(filename):
     if util.is_video(filename) and roop.globals.CFG.output_show_video:
-        return gr.Image(visible=False), gr.Video(visible=True, value=filename)
+        playable = _browser_playable_path(filename)
+        if playable is not None:
+            return gr.Image(visible=False), gr.Video(visible=True, value=playable)
+
+    if util.is_video(filename) or filename.lower().endswith("gif"):
+        current_frame = get_video_frame(filename)
     else:
-        if util.is_video(filename) or filename.lower().endswith("gif"):
-            current_frame = get_video_frame(filename)
-        else:
-            current_frame = get_image_frame(filename)
-        return gr.Image(
-            visible=True, value=util.convert_to_gradio(current_frame)
-        ), gr.Video(visible=False)
+        current_frame = get_image_frame(filename)
+    return gr.Image(
+        visible=True, value=util.convert_to_gradio(current_frame)
+    ), gr.Video(visible=False)
+
+
+def _browser_playable_path(filename):
+    """Path to play in the results panel, or None to show a still frame.
+
+    Returns *filename* when the browser can decode it as-is.  Otherwise a
+    re-encoded preview copy, but only when the user has opted in -- the
+    extra encode pass never runs on its own.
+    """
+    import roop.util_ffmpeg as ffmpeg
+
+    if ffmpeg.is_browser_compatible_video(filename):
+        return filename
+
+    if not roop.globals.CFG.output_reencode_preview:
+        gr.Info(
+            "This output uses a codec or container the browser cannot play, "
+            "so a still frame is shown. Enable 'Re-encode unplayable video "
+            "for preview' in Settings to preview it."
+        )
+        return None
+
+    gr.Info("Output is not browser-playable — re-encoding a preview copy...")
+    preview = ffmpeg.create_browser_preview(filename)
+    if preview is None:
+        gr.Warning("Preview re-encode failed — showing a still frame instead.")
+        return None
+    return preview

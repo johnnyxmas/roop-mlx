@@ -1,11 +1,21 @@
+import hashlib
+import json
 import os
 import subprocess
+import tempfile
 import roop.globals
 import roop.utilities as util
 
 from typing import List
 
 _videotoolbox_available = None
+
+# What an HTML5 <video> element can be relied on to play.  HEVC is
+# deliberately excluded: Safari plays it, Chrome and Firefox do not do so
+# reliably, and the preview should work in whichever browser is used.
+_BROWSER_CONTAINERS = {".mp4", ".m4v", ".webm", ".ogv", ".ogg"}
+_BROWSER_VIDEO_CODECS = {"h264", "vp8", "vp9", "av1"}
+_BROWSER_AUDIO_CODECS = {"aac", "mp3", "opus", "vorbis"}
 
 
 def is_videotoolbox_codec(codec: str) -> bool:
@@ -179,6 +189,92 @@ def scale_video(
         print("ffmpeg re-encode failed. Commandline:")
         print(" ".join(cmd))
     return ok
+
+
+def probe_media_codecs(path: str):
+    """Return ``(video_codec, audio_codec)`` for *path*.
+
+    Either entry is ``None`` when that stream is absent or ffprobe fails.
+    """
+    try:
+        out = subprocess.check_output(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "stream=codec_type,codec_name",
+                "-of", "json", path,
+            ],
+            stderr=subprocess.DEVNULL, timeout=15,
+        )
+        streams = json.loads(out.decode()).get("streams", [])
+    except Exception:
+        return None, None
+
+    video = audio = None
+    for stream in streams:
+        kind = stream.get("codec_type")
+        if kind == "video" and video is None:
+            video = stream.get("codec_name")
+        elif kind == "audio" and audio is None:
+            audio = stream.get("codec_name")
+    return video, audio
+
+
+def is_browser_compatible_video(path: str) -> bool:
+    """True when *path* should play directly in an HTML5 video element.
+
+    Checks the container and both stream codecs -- a swap output can end
+    up unplayable either from the codec settings (libx265, mkv/avi) or
+    from ``restore_audio`` copying an exotic audio track off the source.
+
+    Returns True when probing fails, so an unreadable file never triggers
+    a pointless re-encode.
+    """
+    if os.path.splitext(path)[1].lower() not in _BROWSER_CONTAINERS:
+        return False
+
+    video, audio = probe_media_codecs(path)
+    if video is None:
+        return True
+    if video not in _BROWSER_VIDEO_CODECS:
+        return False
+    if audio is not None and audio not in _BROWSER_AUDIO_CODECS:
+        return False
+    return True
+
+
+def create_browser_preview(video_path: str, dest_dir: str = None, on_progress=None):
+    """Re-encode *video_path* into a browser-playable H.264/AAC MP4.
+
+    The preview lands in Gradio's temp directory (so it is served to the
+    UI and cleared by "Clean temp folder") and is reused while it stays
+    newer than its source.  Returns the preview path, or None on failure.
+    """
+    if dest_dir is None:
+        dest_dir = (
+            os.environ.get("GRADIO_TEMP_DIR")
+            or os.environ.get("TEMP")
+            or tempfile.gettempdir()
+        )
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+    except OSError:
+        return None
+
+    source = os.path.abspath(video_path)
+    stem = os.path.splitext(os.path.basename(source))[0]
+    digest = hashlib.sha1(source.encode("utf-8")).hexdigest()[:8]
+    preview = os.path.join(dest_dir, f"{stem}_{digest}_preview.mp4")
+
+    try:
+        if (os.path.exists(preview)
+                and os.path.getmtime(preview) >= os.path.getmtime(source)):
+            return preview
+    except OSError:
+        pass
+
+    if scale_video(source, preview, on_progress=on_progress):
+        return preview
+    return None
 
 
 def cut_video(

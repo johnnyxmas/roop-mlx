@@ -52,6 +52,11 @@ class Settings:
         )
         self.use_os_temp_folder = self.default_get(data, "use_os_temp_folder", False)
         self.output_show_video = self.default_get(data, "output_show_video", True)
+        # Opt-in: preview playback of outputs the browser cannot decode
+        # costs a full extra encode pass, so it never runs unprompted.
+        self.output_reencode_preview = self.default_get(
+            data, "output_reencode_preview", False
+        )
         self.launch_browser = self.default_get(data, "launch_browser", True)
 
     def save(self):
@@ -70,6 +75,7 @@ class Settings:
             "output_template": self.output_template,
             "use_os_temp_folder": self.use_os_temp_folder,
             "output_show_video": self.output_show_video,
+            "output_reencode_preview": self.output_reencode_preview,
             "launch_browser": self.launch_browser,
         }
         with open(self.config_file, "w") as f:
