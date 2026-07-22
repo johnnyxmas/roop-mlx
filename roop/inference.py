@@ -49,6 +49,48 @@ _MLX_FP16_MODELS = {
 }
 
 
+def _static_model_path(model_path: str) -> str:
+    """Return a path to *model_path* with every symbolic input dim pinned to 1.
+
+    CoreML's MLProgram runtime rejects unbounded dimensions -- a model with a
+    dynamic batch dim raises "E5RT ... has unbounded dimension" at run time and
+    the EP silently partitions it to CPU, forfeiting the ANE/GPU acceleration it
+    was routed to CoreML for.  The detector sub-models (w600k_r50, 2d106det,
+    genderage) all ship a dynamic batch dim yet are only ever called one face at
+    a time (see face_detector.py), so pinning N=1 is exact.  The rewritten copy
+    is cached next to the compiled-model cache and regenerated if the source
+    changes; models that are already static pass straight through.
+    """
+    import onnx
+
+    model = onnx.load(model_path)
+    params = {
+        d.dim_param
+        for inp in model.graph.input
+        for d in inp.type.tensor_type.shape.dim
+        if d.dim_param
+    }
+    if not params:
+        return model_path
+
+    cache_dir = os.path.join(os.path.dirname(model_path), "coreml_cache")
+    fixed = os.path.join(cache_dir, os.path.basename(model_path) + ".static.onnx")
+    if os.path.exists(fixed) and os.path.getmtime(fixed) >= os.path.getmtime(model_path):
+        return fixed
+
+    from onnxruntime.tools.onnx_model_utils import (
+        fix_output_shapes,
+        make_dim_param_fixed,
+    )
+
+    for param in params:
+        make_dim_param_fixed(model.graph, param, 1)
+    fix_output_shapes(model)
+    os.makedirs(cache_dir, exist_ok=True)
+    onnx.save(model, fixed)
+    return fixed
+
+
 def _create_coreml_session(model_path: str):
     import onnxruntime as ort
 
@@ -58,7 +100,7 @@ def _create_coreml_session(model_path: str):
     cache_dir = os.path.join(os.path.dirname(model_path), "coreml_cache")
     os.makedirs(cache_dir, exist_ok=True)
     return ort.InferenceSession(
-        model_path,
+        _static_model_path(model_path),
         providers=[
             ("CoreMLExecutionProvider", {
                 "ModelFormat": "MLProgram",

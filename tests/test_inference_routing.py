@@ -1,0 +1,100 @@
+"""Backend routing: each model must load on its benchmarked-fastest backend."""
+
+import pytest
+
+from conftest import model_path, requires_model
+
+
+def _backend_name(session) -> str:
+    return type(session).__name__
+
+
+@pytest.mark.parametrize("parts,expected", [
+    (("yoloface_8n.onnx",),              "InferenceSession"),
+    (("buffalo_l", "w600k_r50.onnx"),    "InferenceSession"),
+    (("buffalo_l", "2d106det.onnx"),     "InferenceSession"),
+    (("buffalo_l", "genderage.onnx"),    "InferenceSession"),
+    (("GPEN-BFR-512.onnx",),             "OnnxMLXSession"),
+    (("xseg.onnx",),                     "OnnxMLXSession"),
+])
+def test_create_session_backend(parts, expected):
+    path = model_path(*parts)
+    import os
+    if not os.path.exists(path):
+        pytest.skip(f"model not downloaded: {parts}")
+    from roop.inference import create_session
+
+    sess = create_session(path)
+    assert _backend_name(sess) == expected
+
+
+@pytest.mark.parametrize("parts", [
+    ("buffalo_l", "w600k_r50.onnx"),
+    ("buffalo_l", "2d106det.onnx"),
+    ("buffalo_l", "genderage.onnx"),
+])
+def test_static_model_has_no_dynamic_dims(parts):
+    """CoreML's MLProgram runtime rejects unbounded dims (E5RT).  The detector
+    sub-models ship a dynamic batch dim, so the CoreML path must rewrite them to
+    a fully static graph before handing them to the EP."""
+    import os
+
+    import onnx
+
+    path = model_path(*parts)
+    if not os.path.exists(path):
+        pytest.skip(f"model not downloaded: {parts}")
+    from roop.inference import _static_model_path
+
+    static = _static_model_path(path)
+    assert static != path, "model with a dynamic dim should be rewritten"
+
+    model = onnx.load(static, load_external_data=False)
+    dynamic = [
+        (inp.name, d.dim_param)
+        for inp in model.graph.input
+        for d in inp.type.tensor_type.shape.dim
+        if d.dim_param
+    ]
+    assert dynamic == [], f"static copy still has symbolic dims: {dynamic}"
+    assert model.graph.input[0].type.tensor_type.shape.dim[0].dim_value == 1
+
+
+@requires_model("yoloface_8n.onnx")
+def test_static_model_path_passthrough_for_static_model():
+    """Already-static models must not be needlessly copied."""
+    path = model_path("yoloface_8n.onnx")
+    from roop.inference import _static_model_path
+
+    assert _static_model_path(path) == path
+
+
+@requires_model("inswapper_128.onnx")
+def test_inswapper_processor_uses_coreml():
+    from roop.processors.FaceSwapInsightFace import FaceSwapInsightFace
+
+    p = FaceSwapInsightFace()
+    p.Initialize({"modelname": "inswapper_128.onnx", "devicename": "mps", "device_id": 0})
+    try:
+        assert _backend_name(p._session) in ("InferenceSession", "InSwapperNative")
+        if _backend_name(p._session) == "InferenceSession":
+            # CoreML path cannot batch (graph declares batch=1)
+            assert p.supports_batch is False
+        else:
+            # native fallback batches pixel-boost slices
+            assert p.supports_batch is True
+    finally:
+        p.Release()
+
+
+@requires_model("hyperswap_1b_256.onnx")
+def test_hyperswap_processor_session():
+    from roop.processors.FaceSwapFaceFusion import FaceSwapFaceFusion
+
+    p = FaceSwapFaceFusion()
+    p.Initialize({"modelname": "HyperSwap 1B"})
+    try:
+        assert _backend_name(p._session) in ("InferenceSession", "OnnxMLXSession")
+        assert p.swap_type == "hyperswap"
+    finally:
+        p.Release()

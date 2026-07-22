@@ -1,3 +1,5 @@
+import contextlib
+import os
 from typing import Optional
 import cv2
 import numpy as np
@@ -7,6 +9,28 @@ from roop.typing import Frame
 current_video_path = None
 current_frame_total = 0
 current_capture = None
+
+
+@contextlib.contextmanager
+def _suppress_stderr():
+    """Silence fd-level stderr for the duration of the block.
+
+    The AVFoundation VideoIO plugin writes its "Couldn't read movie file"
+    complaint straight to fd 2 with fprintf, and OpenCV logs the
+    "backend ... can't be used to capture by name" warning through its own
+    logger -- neither is catchable from Python.  We only wrap the probe below,
+    where such a failure is expected and handled by the FFmpeg fallback, so
+    genuine errors from the fallback backend still reach the console.
+    """
+    saved_fd = os.dup(2)
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(devnull, 2)
+        yield
+    finally:
+        os.dup2(saved_fd, 2)
+        os.close(devnull)
+        os.close(saved_fd)
 
 
 def get_image_frame(filename: str):
@@ -26,15 +50,21 @@ def open_video_capture(video_path: str) -> cv2.VideoCapture:
     default backend for anything AVFoundation can't read (GIFs, exotic
     containers).
     """
-    cap = cv2.VideoCapture(video_path, cv2.CAP_AVFOUNDATION)
-    if cap.isOpened():
-        ok, frame = cap.read()
-        if (
-            ok
-            and frame is not None
-            and frame.size > 0
-            and cap.get(cv2.CAP_PROP_FRAME_COUNT) > 0
-        ):
+    with _suppress_stderr():
+        cap = cv2.VideoCapture(video_path, cv2.CAP_AVFOUNDATION)
+        opened = cap.isOpened()
+        if opened:
+            ok, frame = cap.read()
+            usable = (
+                ok
+                and frame is not None
+                and frame.size > 0
+                and cap.get(cv2.CAP_PROP_FRAME_COUNT) > 0
+            )
+        else:
+            usable = False
+    if opened:
+        if usable:
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             return cap
         cap.release()

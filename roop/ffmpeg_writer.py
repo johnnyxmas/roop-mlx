@@ -17,6 +17,9 @@ import subprocess as sp
 import threading
 from collections import deque
 
+import cv2
+import numpy as np
+
 from roop.util_ffmpeg import is_videotoolbox_codec, resolve_codec, get_software_fallback
 
 PIPE = -1
@@ -94,6 +97,15 @@ class FFMPEG_VideoWriter:
         self.filename = filename
         self.codec = resolve_codec(codec)
         self.ext = self.filename.split(".")[-1]
+        # ffmpeg is told the raw input is exactly size[0]xsize[1] bgr24, so it
+        # reads size[0]*size[1]*3 bytes per frame with a stride of size[0]*3.
+        # Every frame handed to write_frame must match that shape and channel
+        # count exactly; a frame that is one column wider, or carries an alpha
+        # channel, shifts each row by a few bytes and produces a diagonal
+        # "rolling shutter" shear in the output.  Keep the expected shape so
+        # write_frame can enforce it.
+        self.size = size
+        self._warned_frame_shape = False
         w = size[0] - 1 if size[0] % 2 != 0 else size[0]
         h = size[1] - 1 if size[1] % 2 != 0 else size[1]
 
@@ -218,8 +230,47 @@ class FFMPEG_VideoWriter:
         except Exception:
             pass
 
+    def _coerce_frame(self, img_array):
+        """Force *img_array* to the exact bgr24 shape ffmpeg expects.
+
+        Guards the raw-video pipe against stride desync (the diagonal shear
+        bug): drops any alpha channel, expands grayscale, rescales a
+        wrong-sized frame back to the declared resolution, and casts to uint8.
+        A well-formed frame hits only cheap shape/dtype checks and is returned
+        untouched -- tobytes() serializes C-order regardless of layout, so no
+        contiguity copy is needed.  A single warning reports the real shape so
+        the upstream cause of any mismatch stays visible.
+        """
+        exp_w, exp_h = self.size[0], self.size[1]
+        original_shape = img_array.shape
+
+        if img_array.ndim == 2:
+            img_array = cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
+        elif img_array.ndim == 3 and img_array.shape[2] == 4:
+            img_array = cv2.cvtColor(img_array, cv2.COLOR_BGRA2BGR)
+        elif img_array.ndim == 3 and img_array.shape[2] != 3:
+            img_array = img_array[:, :, :3]
+
+        if img_array.shape[1] != exp_w or img_array.shape[0] != exp_h:
+            img_array = cv2.resize(
+                img_array, (exp_w, exp_h), interpolation=cv2.INTER_AREA
+            )
+
+        if img_array.dtype != np.uint8:
+            img_array = np.clip(img_array, 0, 255).astype(np.uint8)
+
+        if original_shape != (exp_h, exp_w, 3) and not self._warned_frame_shape:
+            self._warned_frame_shape = True
+            print(
+                f"FFMPEG_VideoWriter: frame shape {original_shape} != expected "
+                f"({exp_h}, {exp_w}, 3); coercing to avoid raw-stride shear."
+            )
+
+        return img_array
+
     def write_frame(self, img_array):
         """Writes one frame in the file."""
+        img_array = self._coerce_frame(img_array)
         try:
             # if PY3:
             self.proc.stdin.write(img_array.tobytes())

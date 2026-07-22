@@ -31,6 +31,6 @@ output/*
 /start.sh
 
 # Test scratch files
-test_*
+/test_*
 
 .kilo
