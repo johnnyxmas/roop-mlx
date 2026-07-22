@@ -1,0 +1,57 @@
+# Runs the test suite on GitHub-hosted Apple Silicon (macos-15 = M-series),
+# exercising the real CoreML EP + MLX backends.
+#
+# NOTE: this is a private repo, and hosted macOS minutes bill at a 10x
+# multiplier — the workflow is deliberately lean (small models only,
+# aggressive caching) and triggers only on pushes to main or manually.
+# Model-dependent tests skip when their model file is absent, so the
+# large models (w600k_r50, enhancers, swappers, CLIPSeg) are not
+# downloaded here; their parity tests run locally instead.
+
+name: macos-tests
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet -r requirements.txt pytest
+          brew list ffmpeg >/dev/null 2>&1 || brew install --quiet ffmpeg
+
+      - name: Cache small models + CoreML compile cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            models/yoloface_8n.onnx
+            models/buffalo_l/2d106det.onnx
+            models/buffalo_l/genderage.onnx
+            models/Frame/span_kendata_x4.onnx
+            models/**/coreml_cache
+          key: ci-models-v1
+
+      - name: Download small models (first run only)
+        run: |
+          mkdir -p models/buffalo_l models/Frame
+          dl() { [ -f "$2" ] || curl -sL "$1" -o "$2"; }
+          dl "https://huggingface.co/facefusion/models-3.0.0/resolve/main/yoloface_8n.onnx" models/yoloface_8n.onnx
+          dl "https://huggingface.co/halllooo/buffalo_l/resolve/main/2d106det.onnx" models/buffalo_l/2d106det.onnx
+          dl "https://huggingface.co/halllooo/buffalo_l/resolve/main/genderage.onnx" models/buffalo_l/genderage.onnx
+          dl "https://huggingface.co/facefusion/models-3.0.0/resolve/main/span_kendata_x4.onnx" models/Frame/span_kendata_x4.onnx
+
+      - name: Run tests
+        run: python -m pytest
