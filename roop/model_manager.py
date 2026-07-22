@@ -47,8 +47,10 @@ ALL_MODELS = [
     # -- face masking --
     ("", "xseg.onnx",
      ["https://huggingface.co/countfloyd/deepfake/resolve/main/xseg.onnx"]),
-    ("CLIP", "rd64-uni-refined.pth",
-     ["https://huggingface.co/countfloyd/deepfake/resolve/main/rd64-uni-refined.pth"]),
+    # CLIPSeg ONNX export (Xenova) replaced the torch rd64-uni-refined.pth
+    # 2026-07; text masking now runs through onnxruntime (CoreML/CPU).
+    ("CLIP", "clipseg_rd64_refined.onnx",
+     ["https://huggingface.co/Xenova/clipseg-rd64-refined/resolve/main/onnx/model.onnx"]),
 
     # -- face detection (YOLOv8n-Face) --
     ("", "yoloface_8n.onnx",
@@ -83,6 +85,8 @@ _STALE_MODELS = [
     # retired 2026-07: span_kendata_x4 beats both on quality and speed
     ("Frame", "real_esrgan_x4.onnx"),
     ("Frame", "lsdir_x4.onnx"),
+    # retired 2026-07: replaced by clipseg_rd64_refined.onnx
+    ("CLIP", "rd64-uni-refined.pth"),
 ]
 
 

@@ -1,4 +1,5 @@
-raise ImportError(
-    "clip/ is a PyTorch-based module and is not available in this MLX fork. "
-    "Mask_Clip2Seg raises NotImplementedError until an MLX port is written."
-)
+"""CLIP BPE tokenizer (pure python).
+
+The torch CLIP/CLIPSeg modules were removed 2026-07 when Mask_Clip2Seg
+moved to the ONNX CLIPSeg export; only the tokenizer remains.
+"""
