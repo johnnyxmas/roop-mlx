@@ -10,7 +10,7 @@ import ui.globals
 from roop.face_util import extract_face_images, create_blank_image
 from roop.capturer import get_video_frame, get_video_frame_total, get_image_frame
 from roop.ProcessEntry import ProcessEntry
-from roop.ProcessOptions import ProcessOptions
+from roop.ProcessOptions import ProcessOptions, SWAP_MODEL_OUTPUT_SIZES
 from roop.FaceSet import FaceSet
 from roop.utilities import clean_dir
 
@@ -47,6 +47,18 @@ model_swap_choices = [
     "HyperSwap 1B",
     "HyperSwap 1C",
 ]
+
+DEFAULT_SWAP_MODEL = "HyperSwap 1A"
+
+# Subsample ("pixel boost") upscale targets. A value below the swap model's
+# native output size is a no-op (it gets clamped up in ProcessMgr), so the
+# dropdown only offers sizes >= the selected model's native output.
+UPSCALE_CHOICES = ["128px", "256px", "512px"]
+
+
+def upscale_choices_for_model(swap_model):
+    native = SWAP_MODEL_OUTPUT_SIZES.get(swap_model, 128)
+    return [c for c in UPSCALE_CHOICES if int(c[:3]) >= native]
 
 no_face_choices = [
     "Use untouched original frame",
@@ -372,7 +384,7 @@ def faceswap_tab():
                 with gr.Row(variant="panel"):
                     ui.globals.ui_selected_swap_model = gr.Dropdown(
                         model_swap_choices,
-                        value="HyperSwap 1A",
+                        value=DEFAULT_SWAP_MODEL,
                         label="Specify Face Swap Model",
                     )
                     bt_test_all = gr.Button("Test All Swappers", variant="secondary")
@@ -488,8 +500,8 @@ def faceswap_tab():
                 )
             with gr.Column(scale=1):
                 ui.globals.ui_upscale = gr.Dropdown(
-                    ["128px", "256px", "512px"],
-                    value="128px",
+                    upscale_choices_for_model(DEFAULT_SWAP_MODEL),
+                    value=upscale_choices_for_model(DEFAULT_SWAP_MODEL)[0],
                     label="Subsample upscale to",
                     interactive=True,
                 )
@@ -633,6 +645,12 @@ def faceswap_tab():
         fn=on_mask_engine_changed,
         inputs=[selected_mask_engine],
         outputs=[clip_text],
+        show_progress="hidden",
+    )
+    ui.globals.ui_selected_swap_model.change(
+        fn=on_swap_model_changed,
+        inputs=[ui.globals.ui_selected_swap_model, ui.globals.ui_upscale],
+        outputs=[ui.globals.ui_upscale],
         show_progress="hidden",
     )
 
@@ -857,6 +875,12 @@ def set_mask_offset(index, mask_offset):
         roop.globals.INPUT_FACESETS[SELECTED_INPUT_FACE_INDEX].faces[
             0
         ].mask_offsets = offs
+
+
+def on_swap_model_changed(swap_model, current_upscale):
+    choices = upscale_choices_for_model(swap_model)
+    value = current_upscale if current_upscale in choices else choices[0]
+    return gr.Dropdown(choices=choices, value=value)
 
 
 def on_mask_engine_changed(mask_engine):
