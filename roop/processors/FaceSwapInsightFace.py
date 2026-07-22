@@ -1,7 +1,9 @@
-"""FaceSwapInsightFace -- MLX backend.
+"""FaceSwapInsightFace -- hybrid backend.
 
-Loads inswapper_128 via native MLX model (fast path) or falls back to
-the OnnxMLXSession interpreter for reswapper models.
+Runs inswapper/reswapper models through roop.inference.create_session
+(CoreML EP with MLX-interpreter fallback).  The hand-ported native MLX
+inswapper and its pixel-boost batch path were retired 2026-07 once the
+CoreML default proved stable (33 ms/swap, bit-exact).
 """
 
 import os
@@ -16,9 +18,6 @@ class FaceSwapInsightFace:
 
     processorname = "faceswap"
     type = "swap"
-    # True when the loaded model accepts [N, C, H, W] batches, letting
-    # ProcessMgr swap all pixel-boost slices in one dispatch.
-    supports_batch = False
 
     def Initialize(self, plugin_options: dict):
         if self.plugin_options is not None:
@@ -48,27 +47,10 @@ class FaceSwapInsightFace:
             ).astype(np.float32)
             np.save(emap_cache, self.emap)
 
-        if os.path.basename(model_path) == "inswapper_128.onnx":
-            # CoreML EP: 33 ms/swap, bit-exact vs the ONNX reference.  Its
-            # graph declares batch=1, so pixel-boost slices run per-slice.
-            from roop.inference import try_coreml_session
-            self._session = try_coreml_session(model_path)
-            if self._session is not None:
-                self.supports_batch = False
-            else:
-                # CoreML unavailable — use the hand-ported compiled mlx.nn
-                # model (fp16, batch-capable) instead of the interpreter.
-                import mlx.core as mx
-                from roop.mlx_runtime.inswapper_native import InSwapperNative
-                self._session = InSwapperNative.from_onnx(model_path, dtype=mx.float16)
-                self.supports_batch = True
-            self._output_name = "output"
-        else:
-            # reswapper models: CoreML EP (with MLX fp16 fallback)
-            from roop.inference import create_session
-            self._session = create_session(model_path)
-            self._output_name = self._session.get_outputs()[0].name
-            self.supports_batch = False
+        # CoreML EP with MLX-interpreter fallback for all swap models.
+        from roop.inference import create_session
+        self._session = create_session(model_path)
+        self._output_name = self._session.get_outputs()[0].name
 
     def Run(self, source_face, target_face: Face, temp_frame: Frame) -> Frame:
         if hasattr(source_face, "faces") and source_face.faces:
@@ -88,4 +70,3 @@ class FaceSwapInsightFace:
     def Release(self):
         self._session = None
         self.emap = None
-        self.supports_batch = False

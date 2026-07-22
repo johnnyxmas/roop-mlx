@@ -32,20 +32,16 @@ def test_pixel_boost_roundtrip(mgr):
 
 
 @pytest.mark.parametrize("model_type", ["inswapper", "ghost"])
-def test_batched_prepare_normalize_match_per_slice(mgr, model_type):
+def test_prepare_normalize_roundtrip(mgr, model_type):
+    """normalize must invert prepare (up to uint8 rounding)."""
     mgr._get_swap_type = lambda: model_type
     rng = np.random.default_rng(2)
-    frames = rng.integers(0, 256, (4, 128, 128, 3), dtype=np.uint8)
+    frame = rng.integers(0, 256, (128, 128, 3), dtype=np.uint8)
 
-    single = np.concatenate([mgr.prepare_crop_frame(f) for f in frames])
-    batch = mgr.prepare_crop_frames(frames)
-    assert single.shape == batch.shape
-    assert np.allclose(single, batch)
-
-    blob = rng.normal(0, 0.5, (4, 3, 128, 128)).astype(np.float32)
-    single_n = np.stack([mgr.normalize_swap_frame(blob[i]) for i in range(4)])
-    batch_n = np.asarray(mgr.normalize_swap_frames(blob))
-    assert np.allclose(single_n, batch_n)
+    blob = mgr.prepare_crop_frame(frame)
+    assert blob.shape == (1, 3, 128, 128) and blob.dtype == np.float32
+    back = mgr.normalize_swap_frame(blob)
+    assert np.abs(back - frame).max() <= 1
 
 
 def _paste_upscale_fullframe(self, fake_face, upsk_face, M, target_img,

@@ -849,23 +849,13 @@ class ProcessMgr:
                 subsample_frames = self.implode_pixel_boost(
                     aligned_img, model_output_size, subsample_total
                 )
-                if getattr(p, "supports_batch", False):
-                    # Swap every pixel-boost slice in a single batched
-                    # dispatch instead of one GPU round-trip per slice.
-                    frames = subsample_frames
+                swap_result_frames = []
+                for sliced_frame in subsample_frames:
                     for _ in range(0, self.options.num_swap_steps):
-                        blob = self.prepare_crop_frames(frames)
-                        blob = p.Run(swap_source, target_face, blob)
-                        frames = self.normalize_swap_frames(blob)
-                    swap_result_frames = list(frames)
-                else:
-                    swap_result_frames = []
-                    for sliced_frame in subsample_frames:
-                        for _ in range(0, self.options.num_swap_steps):
-                            sliced_frame = self.prepare_crop_frame(sliced_frame)
-                            sliced_frame = p.Run(swap_source, target_face, sliced_frame)
-                            sliced_frame = self.normalize_swap_frame(sliced_frame)
-                        swap_result_frames.append(sliced_frame)
+                        sliced_frame = self.prepare_crop_frame(sliced_frame)
+                        sliced_frame = p.Run(swap_source, target_face, sliced_frame)
+                        sliced_frame = self.normalize_swap_frame(sliced_frame)
+                    swap_result_frames.append(sliced_frame)
                 fake_frame = self.explode_pixel_boost(
                     swap_result_frames,
                     model_output_size,
@@ -1082,26 +1072,6 @@ class ProcessMgr:
             swap_frame = swap_frame.transpose(2, 0, 1)
             swap_frame = np.expand_dims(swap_frame, axis=0).astype(np.float32)
         return swap_frame
-
-    def prepare_crop_frames(self, frames):
-        """Batched prepare_crop_frame: [N, H, W, 3] BGR uint8/float -> [N, 3, H, W] float32."""
-        model_type = self._get_swap_type()
-        frames = np.asarray(frames)
-        if model_type in ("ghost", "hyperswap", "uniface"):
-            blob = frames[:, :, :, ::-1] / 127.5 - 1
-        else:
-            blob = frames[:, :, :, ::-1] / 255.0
-        return np.ascontiguousarray(blob.transpose(0, 3, 1, 2), dtype=np.float32)
-
-    def normalize_swap_frames(self, blob):
-        """Batched normalize_swap_frame: [N, 3, H, W] -> [N, H, W, 3] BGR."""
-        model_type = self._get_swap_type()
-        frames = np.asarray(blob).transpose(0, 2, 3, 1)
-        if model_type in ("ghost", "hyperswap", "uniface"):
-            frames = (frames * 127.5 + 127.5).round()
-        else:
-            frames = (frames * 255.0).round()
-        return frames[:, :, :, ::-1]
 
     def normalize_swap_frame(self, swap_frame):
         model_type = self._get_swap_type()

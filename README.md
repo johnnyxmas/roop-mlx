@@ -142,8 +142,7 @@ numerical parity against the ONNX reference implementation:
 | Video decode / encode | VideoToolbox hardware |
 
 If `onnxruntime` is unavailable, everything falls back to the in-repo
-ONNX-to-MLX interpreter (inswapper falls back to a hand-ported, compiled
-`mlx.nn` model).
+ONNX-to-MLX interpreter.
 
 Run the test suite (model parity, compositing math, color pipeline) with:
 
