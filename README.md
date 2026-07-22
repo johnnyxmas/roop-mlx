@@ -137,7 +137,7 @@ numerical parity against the ONNX reference implementation:
 | Face detection (YOLOv8n-Face), recognition (ArcFace), landmarks, gender/age | CoreML (ANE/GPU) |
 | Swap models: inswapper, ReSwapper, HyperSwap | CoreML |
 | Enhancers: GFPGAN, CodeFormer, RestoreFormer++ | CoreML |
-| Upscalers: Real-ESRGAN ×4, LSDIR ×4 | CoreML |
+| Upscaler: SPAN ×4 | CoreML |
 | GPEN, XSeg, DeOldify, ISNet, Real-ESRGAN ×2 | MLX graph interpreter |
 | Video decode / encode | VideoToolbox hardware |
 

@@ -30,14 +30,13 @@ _COREML_MODELS = {
     "hyperswap_1c_256.onnx",
     "reswapper_128.onnx",
     "reswapper_256.onnx",
-    # Frame upscalers: x4 models are faster on CoreML (near-exact), and the
-    # static 128x128 tile pinning (_STATIC_DIM_SIZES) buys a further ~1.7x
-    # over their old dynamic-dim graphs.  SPAN is 2.5x faster on CoreML than
-    # the MLX interpreter (2.2 vs 5.4 ms/tile).  real_esrgan_x2, deoldify
-    # and isnet stay on the MLX interpreter — x2 partitions poorly on CoreML
-    # (5x slower) and the other two fail CoreML compilation outright.
-    "real_esrgan_x4.onnx",
-    "lsdir_x4.onnx",
+    # Frame upscaler: SPAN is 2.5x faster on CoreML than the MLX interpreter
+    # (2.2 vs 5.4 ms/tile) with 1.6e-5 parity; the static 128x128 tile
+    # pinning (_STATIC_DIM_SIZES) keeps it off the E5RT unbounded-dim path.
+    # real_esrgan_x2, deoldify and isnet stay on the MLX interpreter — x2
+    # partitions poorly on CoreML (5x slower) and the other two fail CoreML
+    # compilation outright.  (real_esrgan_x4/lsdir_x4 retired 2026-07:
+    # span_kendata_x4 beat both on quality and speed.)
     "span_kendata_x4.onnx",
 }
 
@@ -56,9 +55,7 @@ _MLX_FP16_MODELS = {
 # upscalers always see exactly 128x128 tiles (Frame_Upscale.Run), so their
 # spatial dims can be pinned along with the batch dim.
 _STATIC_DIM_SIZES = {
-    "real_esrgan_x4.onnx":   {"batch_size": 1, "height": 128, "width": 128},
-    "lsdir_x4.onnx":         {"batch_size": 1, "height": 128, "width": 128},
-    "span_kendata_x4.onnx":  {"batch_size": 1, "height": 128, "width": 128},
+    "span_kendata_x4.onnx": {"batch_size": 1, "height": 128, "width": 128},
 }
 
 

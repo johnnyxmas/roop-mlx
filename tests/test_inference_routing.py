@@ -63,8 +63,6 @@ def test_static_model_has_no_dynamic_dims(parts):
 
 
 @pytest.mark.parametrize("fname", [
-    "real_esrgan_x4.onnx",
-    "lsdir_x4.onnx",
     "span_kendata_x4.onnx",
 ])
 def test_static_upscaler_pins_tile_size(fname):

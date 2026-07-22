@@ -69,21 +69,20 @@ ALL_MODELS = [
      ["https://huggingface.co/countfloyd/deepfake/resolve/main/deoldify_stable.onnx"]),
     ("Frame", "isnet-general-use.onnx",
      ["https://huggingface.co/countfloyd/deepfake/resolve/main/isnet-general-use.onnx"]),
-    ("Frame", "real_esrgan_x4.onnx",
-     ["https://huggingface.co/countfloyd/deepfake/resolve/main/real_esrgan_x4.onnx"]),
     ("Frame", "real_esrgan_x2.onnx",
      ["https://huggingface.co/countfloyd/deepfake/resolve/main/real_esrgan_x2.onnx"]),
-    ("Frame", "lsdir_x4.onnx",
-     ["https://huggingface.co/countfloyd/deepfake/resolve/main/lsdir_x4.onnx"]),
     ("Frame", "span_kendata_x4.onnx",
      ["https://huggingface.co/facefusion/models-3.0.0/resolve/main/span_kendata_x4.onnx"]),
 ]
 
 
-# Downloaded by older versions but never loaded by the MLX port.
+# Downloaded by older versions but no longer loaded.
 _STALE_MODELS = [
     ("buffalo_l", "det_10g.onnx"),
     ("buffalo_l", "1k3d68.onnx"),
+    # retired 2026-07: span_kendata_x4 beats both on quality and speed
+    ("Frame", "real_esrgan_x4.onnx"),
+    ("Frame", "lsdir_x4.onnx"),
 ]
 
 

@@ -1,7 +1,7 @@
 """Frame_Upscale -- MLX backend.
 
-Supports RealESRGAN ×2, RealESRGAN ×4, and LSDIR ×4 super-resolution
-models.  Uses the same tile-based pipeline as the upstream ORT version.
+Supports RealESRGAN ×2 and SPAN ×4 super-resolution models.  Uses the
+same tile-based pipeline as the upstream ORT version.
 """
 
 import numpy as np
@@ -10,10 +10,8 @@ from roop.typing import Frame
 from roop.utilities import resolve_relative_path
 
 _MODEL_CONFIGS = {
-    "esrganx2": ("real_esrgan_x2.onnx",   2),
-    "esrganx4": ("real_esrgan_x4.onnx",   4),
-    "lsdirx4":  ("lsdir_x4.onnx",         4),
-    "spanx4":   ("span_kendata_x4.onnx",  4),
+    "esrganx2": ("real_esrgan_x2.onnx",  2),
+    "spanx4":   ("span_kendata_x4.onnx", 4),
 }
 
 
@@ -25,7 +23,7 @@ class Frame_Upscale:
     type = "frame_enhancer"
 
     def Initialize(self, plugin_options: dict):
-        subtype = plugin_options.get("subtype", "esrganx4")
+        subtype = plugin_options.get("subtype", "spanx4")
         if self.prev_type is not None and self.prev_type != subtype:
             self.Release()
 
@@ -35,7 +33,7 @@ class Frame_Upscale:
         if getattr(self, "_session", None) is not None:
             return
 
-        fname, self.scale = _MODEL_CONFIGS.get(subtype, ("real_esrgan_x4.onnx", 4))
+        fname, self.scale = _MODEL_CONFIGS.get(subtype, ("span_kendata_x4.onnx", 4))
         model_path = resolve_relative_path(f"../models/Frame/{fname}")
 
         from roop.inference import create_session
