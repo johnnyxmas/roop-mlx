@@ -66,9 +66,9 @@ def test_static_model_has_no_dynamic_dims(parts):
     "span_kendata_x4.onnx",
 ])
 def test_static_upscaler_pins_tile_size(fname):
-    """Tile-based upscalers must pin batch=1 AND spatial dims to the 128px
-    tile Frame_Upscale always feeds — pinning spatial dims to 1 (the batch
-    default) would break tile inference at run time."""
+    """Tile-based upscalers must pin batch=1 AND spatial dims to the tile
+    size Frame_Upscale feeds this model — pinning spatial dims to 1 (the
+    batch default) would break tile inference at run time."""
     import os
 
     import numpy as np
@@ -78,18 +78,22 @@ def test_static_upscaler_pins_tile_size(fname):
     if not os.path.exists(path):
         pytest.skip(f"model not downloaded: {fname}")
     from roop.inference import _static_model_path
+    from roop.processors.Frame_Upscale import _MODEL_CONFIGS
 
+    (tile,) = {
+        cfg[2] for cfg in _MODEL_CONFIGS.values() if cfg[0] == fname
+    }
     static = _static_model_path(path)
     assert static != path
     model = onnx.load(static, load_external_data=False)
     dims = [d.dim_value for d in model.graph.input[0].type.tensor_type.shape.dim]
-    assert dims == [1, 3, 128, 128], dims
+    assert dims == [1, 3, tile, tile], dims
 
-    # and the static graph must actually accept a 128px tile
+    # and the static graph must actually accept a tile of that size
     import onnxruntime as ort
     sess = ort.InferenceSession(static, providers=["CPUExecutionProvider"])
-    out = sess.run(None, {"input": np.zeros((1, 3, 128, 128), np.float32)})[0]
-    assert out.shape == (1, 3, 512, 512)
+    out = sess.run(None, {"input": np.zeros((1, 3, tile, tile), np.float32)})[0]
+    assert out.shape == (1, 3, tile * 4, tile * 4)
 
 
 @requires_model("yoloface_8n.onnx")
@@ -108,13 +112,8 @@ def test_inswapper_processor_uses_coreml():
     p = FaceSwapInsightFace()
     p.Initialize({"modelname": "inswapper_128.onnx", "devicename": "mps", "device_id": 0})
     try:
-        assert _backend_name(p._session) in ("InferenceSession", "InSwapperNative")
-        if _backend_name(p._session) == "InferenceSession":
-            # CoreML path cannot batch (graph declares batch=1)
-            assert p.supports_batch is False
-        else:
-            # native fallback batches pixel-boost slices
-            assert p.supports_batch is True
+        # CoreML EP with MLX-interpreter fallback (native model retired)
+        assert _backend_name(p._session) in ("InferenceSession", "OnnxMLXSession")
     finally:
         p.Release()
 

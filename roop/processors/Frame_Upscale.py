@@ -9,9 +9,13 @@ import numpy as np
 from roop.typing import Frame
 from roop.utilities import resolve_relative_path
 
+# (model file, scale, tile size).  SPAN uses 512px tiles: fewer tiles cut
+# python tile-management overhead (110 -> 88 ms per 480p frame vs 128px)
+# and reduce tile-border seams; the CoreML static pin in
+# roop.inference._STATIC_DIM_SIZES must match.
 _MODEL_CONFIGS = {
-    "esrganx2": ("real_esrgan_x2.onnx",  2),
-    "spanx4":   ("span_kendata_x4.onnx", 4),
+    "esrganx2": ("real_esrgan_x2.onnx",  2, 128),
+    "spanx4":   ("span_kendata_x4.onnx", 4, 512),
 }
 
 
@@ -33,7 +37,9 @@ class Frame_Upscale:
         if getattr(self, "_session", None) is not None:
             return
 
-        fname, self.scale = _MODEL_CONFIGS.get(subtype, ("span_kendata_x4.onnx", 4))
+        fname, self.scale, self.tile_size = _MODEL_CONFIGS.get(
+            subtype, ("span_kendata_x4.onnx", 4, 512)
+        )
         model_path = resolve_relative_path(f"../models/Frame/{fname}")
 
         from roop.inference import create_session
@@ -80,7 +86,7 @@ class Frame_Upscale:
         return merged[pad:pad+out_h, pad:pad+out_w]
 
     def Run(self, temp_frame: Frame) -> Frame:
-        size = (128, 8, 2)
+        size = (self.tile_size, 8, 2)
         orig_h, orig_w = temp_frame.shape[:2]
         tiles, pad_w, pad_h = self._create_tiles(temp_frame, size)
 

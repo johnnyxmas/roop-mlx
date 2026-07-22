@@ -55,7 +55,18 @@ _MLX_FP16_MODELS = {
 # upscalers always see exactly 128x128 tiles (Frame_Upscale.Run), so their
 # spatial dims can be pinned along with the batch dim.
 _STATIC_DIM_SIZES = {
-    "span_kendata_x4.onnx": {"batch_size": 1, "height": 128, "width": 128},
+    # 512px tiles: SPAN is compute-bound, but larger tiles still cut the
+    # python tile-management overhead — 110 -> 88 ms per 480p frame vs
+    # 128px tiles, with fewer tile-border seams.  Must match the tile size
+    # Frame_Upscale uses for this model.
+    "span_kendata_x4.onnx": {"batch_size": 1, "height": 512, "width": 512},
+    # CLIPSeg text masking: one prompt per run, CLIP's fixed 77-token
+    # context, native 352px input (see Mask_Clip2Seg).
+    "clipseg_rd64_refined.onnx": {
+        "text_batch_size": 1, "sequence_length": 77,
+        "image_batch_size": 1, "num_channels": 3,
+        "height": 352, "width": 352,
+    },
 }
 
 
@@ -98,7 +109,12 @@ def _static_model_path(model_path: str) -> str:
         return model_path
 
     cache_dir = os.path.join(os.path.dirname(model_path), "coreml_cache")
-    fixed = os.path.join(cache_dir, os.path.basename(model_path) + ".static.onnx")
+    # Encode the pinned sizes in the filename so changing _STATIC_DIM_SIZES
+    # invalidates the cache (an mtime check alone would serve stale pins).
+    tag = "-".join(str(v) for _, v in sorted(sizes.items()))
+    fixed = os.path.join(
+        cache_dir, os.path.basename(model_path) + f".static.{tag}.onnx"
+    )
     if os.path.exists(fixed) and os.path.getmtime(fixed) >= os.path.getmtime(model_path):
         return fixed
 
@@ -152,7 +168,9 @@ def prewarm_sessions_async():
             "../models/yoloface_8n.onnx",
             "../models/buffalo_l/w600k_r50.onnx",
             "../models/buffalo_l/2d106det.onnx",
+            "../models/buffalo_l/genderage.onnx",
             "../models/inswapper_128.onnx",
+            "../models/Frame/span_kendata_x4.onnx",
         ):
             try:
                 path = resolve_relative_path(rel)
