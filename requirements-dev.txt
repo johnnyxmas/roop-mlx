@@ -1,2 +1,2 @@
 # Development/test dependencies
-pytest>=8.0,<9.0
+pytest>=9.0.3,<10.0
