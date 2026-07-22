@@ -14,6 +14,8 @@ def _backend_name(session) -> str:
     (("buffalo_l", "w600k_r50.onnx"),    "InferenceSession"),
     (("buffalo_l", "2d106det.onnx"),     "InferenceSession"),
     (("buffalo_l", "genderage.onnx"),    "InferenceSession"),
+    (("Frame", "span_kendata_x4.onnx"),  "InferenceSession"),
+    (("Frame", "real_esrgan_x2.onnx"),   "OnnxMLXSession"),
     (("GPEN-BFR-512.onnx",),             "OnnxMLXSession"),
     (("xseg.onnx",),                     "OnnxMLXSession"),
 ])
@@ -58,6 +60,38 @@ def test_static_model_has_no_dynamic_dims(parts):
     ]
     assert dynamic == [], f"static copy still has symbolic dims: {dynamic}"
     assert model.graph.input[0].type.tensor_type.shape.dim[0].dim_value == 1
+
+
+@pytest.mark.parametrize("fname", [
+    "real_esrgan_x4.onnx",
+    "lsdir_x4.onnx",
+    "span_kendata_x4.onnx",
+])
+def test_static_upscaler_pins_tile_size(fname):
+    """Tile-based upscalers must pin batch=1 AND spatial dims to the 128px
+    tile Frame_Upscale always feeds — pinning spatial dims to 1 (the batch
+    default) would break tile inference at run time."""
+    import os
+
+    import numpy as np
+    import onnx
+
+    path = model_path("Frame", fname)
+    if not os.path.exists(path):
+        pytest.skip(f"model not downloaded: {fname}")
+    from roop.inference import _static_model_path
+
+    static = _static_model_path(path)
+    assert static != path
+    model = onnx.load(static, load_external_data=False)
+    dims = [d.dim_value for d in model.graph.input[0].type.tensor_type.shape.dim]
+    assert dims == [1, 3, 128, 128], dims
+
+    # and the static graph must actually accept a 128px tile
+    import onnxruntime as ort
+    sess = ort.InferenceSession(static, providers=["CPUExecutionProvider"])
+    out = sess.run(None, {"input": np.zeros((1, 3, 128, 128), np.float32)})[0]
+    assert out.shape == (1, 3, 512, 512)
 
 
 @requires_model("yoloface_8n.onnx")

@@ -10,9 +10,10 @@ from roop.typing import Frame
 from roop.utilities import resolve_relative_path
 
 _MODEL_CONFIGS = {
-    "esrganx2": ("real_esrgan_x2.onnx", 2),
-    "esrganx4": ("real_esrgan_x4.onnx", 4),
-    "lsdirx4":  ("lsdir_x4.onnx",       4),
+    "esrganx2": ("real_esrgan_x2.onnx",   2),
+    "esrganx4": ("real_esrgan_x4.onnx",   4),
+    "lsdirx4":  ("lsdir_x4.onnx",         4),
+    "spanx4":   ("span_kendata_x4.onnx",  4),
 }
 
 

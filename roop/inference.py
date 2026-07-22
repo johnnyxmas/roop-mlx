@@ -30,12 +30,15 @@ _COREML_MODELS = {
     "hyperswap_1c_256.onnx",
     "reswapper_128.onnx",
     "reswapper_256.onnx",
-    # Frame upscalers: x4 models are 1.2-1.7x faster on CoreML (bit-exact).
-    # real_esrgan_x2, deoldify and isnet stay on the MLX interpreter —
-    # x2 partitions poorly on CoreML (5x slower) and the other two fail
-    # CoreML compilation outright.
+    # Frame upscalers: x4 models are faster on CoreML (near-exact), and the
+    # static 128x128 tile pinning (_STATIC_DIM_SIZES) buys a further ~1.7x
+    # over their old dynamic-dim graphs.  SPAN is 2.5x faster on CoreML than
+    # the MLX interpreter (2.2 vs 5.4 ms/tile).  real_esrgan_x2, deoldify
+    # and isnet stay on the MLX interpreter — x2 partitions poorly on CoreML
+    # (5x slower) and the other two fail CoreML compilation outright.
     "real_esrgan_x4.onnx",
     "lsdir_x4.onnx",
+    "span_kendata_x4.onnx",
 }
 
 # Models that ran fp16 on the MLX interpreter before moving to CoreML;
@@ -49,28 +52,52 @@ _MLX_FP16_MODELS = {
 }
 
 
+# Fixed sizes for symbolic input dims, per model.  The tile-based frame
+# upscalers always see exactly 128x128 tiles (Frame_Upscale.Run), so their
+# spatial dims can be pinned along with the batch dim.
+_STATIC_DIM_SIZES = {
+    "real_esrgan_x4.onnx":   {"batch_size": 1, "height": 128, "width": 128},
+    "lsdir_x4.onnx":         {"batch_size": 1, "height": 128, "width": 128},
+    "span_kendata_x4.onnx":  {"batch_size": 1, "height": 128, "width": 128},
+}
+
+
 def _static_model_path(model_path: str) -> str:
-    """Return a path to *model_path* with every symbolic input dim pinned to 1.
+    """Return a path to *model_path* with its symbolic input dims pinned.
 
     CoreML's MLProgram runtime rejects unbounded dimensions -- a model with a
-    dynamic batch dim raises "E5RT ... has unbounded dimension" at run time and
-    the EP silently partitions it to CPU, forfeiting the ANE/GPU acceleration it
+    dynamic dim raises "E5RT ... has unbounded dimension" at run time and the
+    EP silently partitions it to CPU, forfeiting the ANE/GPU acceleration it
     was routed to CoreML for.  The detector sub-models (w600k_r50, 2d106det,
-    genderage) all ship a dynamic batch dim yet are only ever called one face at
-    a time (see face_detector.py), so pinning N=1 is exact.  The rewritten copy
-    is cached next to the compiled-model cache and regenerated if the source
-    changes; models that are already static pass straight through.
+    genderage) ship a dynamic batch dim yet are only ever called one face at a
+    time (see face_detector.py), so pinning N=1 is exact; the frame upscalers
+    additionally get their spatial dims pinned via _STATIC_DIM_SIZES.  Symbolic
+    dims in the batch position (dim 0) default to 1; a model with an unmapped
+    symbolic dim elsewhere is passed through unchanged rather than guessed at.
+    The rewritten copy is cached next to the compiled-model cache and
+    regenerated if the source changes; already-static models pass straight
+    through.
     """
     import onnx
 
     model = onnx.load(model_path)
-    params = {
-        d.dim_param
-        for inp in model.graph.input
-        for d in inp.type.tensor_type.shape.dim
-        if d.dim_param
-    }
-    if not params:
+    sizes = dict(_STATIC_DIM_SIZES.get(os.path.basename(model_path), {}))
+    unmapped = set()
+    for inp in model.graph.input:
+        for pos, d in enumerate(inp.type.tensor_type.shape.dim):
+            if not d.dim_param or d.dim_param in sizes:
+                continue
+            if pos == 0:
+                sizes[d.dim_param] = 1  # batch dim
+            else:
+                unmapped.add(d.dim_param)
+    if unmapped:
+        print(
+            f"Not pinning {os.path.basename(model_path)} for CoreML: "
+            f"non-batch symbolic dims {sorted(unmapped)} have no fixed size."
+        )
+        return model_path
+    if not sizes:
         return model_path
 
     cache_dir = os.path.join(os.path.dirname(model_path), "coreml_cache")
@@ -83,8 +110,8 @@ def _static_model_path(model_path: str) -> str:
         make_dim_param_fixed,
     )
 
-    for param in params:
-        make_dim_param_fixed(model.graph, param, 1)
+    for param, value in sizes.items():
+        make_dim_param_fixed(model.graph, param, value)
     fix_output_shapes(model)
     os.makedirs(cache_dir, exist_ok=True)
     onnx.save(model, fixed)
@@ -133,8 +160,7 @@ def prewarm_sessions_async():
             try:
                 path = resolve_relative_path(rel)
                 if os.path.exists(path):
-                    sess = _create_coreml_session(path)
-                    del sess
+                    _create_coreml_session(path)
             except Exception:
                 return
 

@@ -30,6 +30,7 @@ frame_upscalers_map = {
     "ESRGAN x2": {"upscale": {"subtype": "esrganx2"}},
     "ESRGAN x4": {"upscale": {"subtype": "esrganx4"}},
     "LSDIR x4": {"upscale": {"subtype": "lsdirx4"}},
+    "SPAN Kendata x4": {"upscale": {"subtype": "spanx4"}},
 }
 
 

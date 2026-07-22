@@ -75,6 +75,8 @@ ALL_MODELS = [
      ["https://huggingface.co/countfloyd/deepfake/resolve/main/real_esrgan_x2.onnx"]),
     ("Frame", "lsdir_x4.onnx",
      ["https://huggingface.co/countfloyd/deepfake/resolve/main/lsdir_x4.onnx"]),
+    ("Frame", "span_kendata_x4.onnx",
+     ["https://huggingface.co/facefusion/models-3.0.0/resolve/main/span_kendata_x4.onnx"]),
 ]
 
 
