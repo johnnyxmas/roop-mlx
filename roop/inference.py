@@ -131,6 +131,47 @@ def _static_model_path(model_path: str) -> str:
     return fixed
 
 
+# CoreML MLProgram compilation is not safe to run concurrently: a session
+# compiled while another thread is also compiling (e.g. the prewarm daemon
+# during app startup) can write a *corrupted* compiled-model cache entry.
+# Every session loading that entry then fails every run() with
+# "output_features has no value for ..." — permanently, until the cache is
+# cleared (reproduced deterministically with RestoreFormer++ vs prewarm).
+# Creation is therefore serialized, and each new session is validated with
+# a dummy inference; a validation failure wipes the compile cache and
+# recompiles once, which heals caches poisoned before the lock existed.
+_COREML_CREATE_LOCK = __import__("threading").Lock()
+
+_NP_DTYPES = {
+    "tensor(float)": "float32",
+    "tensor(double)": "float64",
+    "tensor(int64)": "int64",
+    "tensor(int32)": "int32",
+}
+
+
+def _validate_session(sess) -> bool:
+    """Run a zero-filled inference to prove the compiled partitions execute.
+
+    Skips (returns True) if any input has a symbolic dim or unmapped dtype.
+    """
+    import numpy as np
+
+    feed = {}
+    for inp in sess.get_inputs():
+        if not all(isinstance(d, int) and d > 0 for d in inp.shape):
+            return True
+        dtype = _NP_DTYPES.get(inp.type)
+        if dtype is None:
+            return True
+        feed[inp.name] = np.zeros(inp.shape, dtype=dtype)
+    try:
+        sess.run(None, feed)
+        return True
+    except Exception:
+        return False
+
+
 def _create_coreml_session(model_path: str):
     import onnxruntime as ort
 
@@ -139,17 +180,44 @@ def _create_coreml_session(model_path: str):
     # pays CoreML compilation (up to ~20s for CodeFormer).
     cache_dir = os.path.join(os.path.dirname(model_path), "coreml_cache")
     os.makedirs(cache_dir, exist_ok=True)
-    return ort.InferenceSession(
-        _static_model_path(model_path),
-        providers=[
-            ("CoreMLExecutionProvider", {
-                "ModelFormat": "MLProgram",
-                "MLComputeUnits": "ALL",
-                "ModelCacheDirectory": cache_dir,
-            }),
-            "CPUExecutionProvider",
-        ],
-    )
+
+    def _build():
+        return ort.InferenceSession(
+            _static_model_path(model_path),
+            providers=[
+                ("CoreMLExecutionProvider", {
+                    "ModelFormat": "MLProgram",
+                    "MLComputeUnits": "ALL",
+                    "ModelCacheDirectory": cache_dir,
+                }),
+                "CPUExecutionProvider",
+            ],
+        )
+
+    with _COREML_CREATE_LOCK:
+        sess = _build()
+        if _validate_session(sess):
+            return sess
+        # Poisoned compile cache — wipe every compiled entry in this models
+        # dir (static .onnx rewrites are kept) and compile fresh.
+        import shutil
+
+        print(
+            f"Corrupt CoreML compile cache detected for "
+            f"{os.path.basename(model_path)}; clearing {cache_dir} and recompiling."
+        )
+        del sess
+        for entry in os.listdir(cache_dir):
+            full = os.path.join(cache_dir, entry)
+            if os.path.isdir(full):
+                shutil.rmtree(full, ignore_errors=True)
+        sess = _build()
+        if not _validate_session(sess):
+            raise RuntimeError(
+                f"CoreML session for {os.path.basename(model_path)} still "
+                "failing after cache reset"
+            )
+        return sess
 
 
 def prewarm_sessions_async():
