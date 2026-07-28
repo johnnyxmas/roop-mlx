@@ -8,7 +8,9 @@ mlx>=0.20.0; sys_platform == "darwin" and platform_machine == "arm64"
 # -- onnxruntime for the CoreML execution provider: 2-4x faster than the
 # MLX interpreter for the detector stack and large enhancers (see
 # roop/inference.py for the per-model backend split).
-onnxruntime>=1.27,<2.0; sys_platform == "darwin" and platform_machine == "arm64"
+# 1.28 is the floor: 1.27 ships no cp314 wheel, so an older bound silently
+# blocks python 3.14.  CoreML EP and swap parity verified on 1.28.
+onnxruntime>=1.28,<2.0; sys_platform == "darwin" and platform_machine == "arm64"
 
 # -- diffusion tab (roop/diffusion): the SD 1.5 / SDXL / FLUX stacks are
 # implemented directly in MLX, so no torch or diffusers is pulled in.
@@ -18,8 +20,14 @@ huggingface-hub>=0.30,<2.0
 tokenizers>=0.20,<1.0
 
 # -- core numerics / image / video --
+# opencv 5 (2026-07): verified against every cv2 symbol this repo calls (59 of
+# them, incl. dnn.NMSBoxes/blobFromImage, calcOpticalFlowPyrLK and the photo
+# filters) plus a real end-to-end swap -- output differs from 4.12 only by
+# interpolation rounding in the blended face region (max 39/765, p50 1).
+# 5.x also drops opencv's numpy<2.3 ceiling, which is why numpy is unbounded
+# again here.
 numpy>=2.0,<3.0
-opencv-python-headless==4.12.0.88
+opencv-python-headless>=5.0,<6.0
 scipy>=1.11,<2.0
 scikit-image>=0.21,<1.0
 pillow>=12.2.0
@@ -29,16 +37,22 @@ pillow>=12.2.0
 onnx==1.22.0
 
 # -- UI --
+# Both bounds below are gradio's own, not tighter guesses: gradio 6.x asks for
+# pydantic>=2.0,<=3.0 and markupsafe>=2.0,<4.0.  The previous pydantic==2.10.6
+# pin was what kept this project off python 3.14 -- 2.10.6 ships no cp314
+# wheel, while 2.11+ does.
 gradio>=6.7.0,<7.0
-pydantic==2.10.6
-markupsafe>=2.0,<3.0
+pydantic>=2.11,<3.0
+markupsafe>=2.0,<4.0
 
 # -- misc --
 pyyaml>=6.0,<7.0
 requests>=2.31,<3.0
-tqdm==4.67.1
+tqdm>=4.67,<5.0
 ftfy>=6.0,<7.0
-regex>=2024.0.0,<2026.0.0
+# regex uses CalVer (2026.7.19), so an upper bound has to be a future *year*
+# or it silently freezes the package -- <2026.0.0 stopped all updates in
+# January 2026.
+regex>=2024.0.0,<2027.0.0
 pyvirtualcam>=0.12,<1.0
-psutil==5.9.6
-albucore==0.0.24
+psutil>=5.9,<8.0
