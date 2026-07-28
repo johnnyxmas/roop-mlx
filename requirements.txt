@@ -10,6 +10,13 @@ mlx>=0.20.0; sys_platform == "darwin" and platform_machine == "arm64"
 # roop/inference.py for the per-model backend split).
 onnxruntime>=1.27,<2.0; sys_platform == "darwin" and platform_machine == "arm64"
 
+# -- diffusion tab (roop/diffusion): the SD 1.5 / SDXL / FLUX stacks are
+# implemented directly in MLX, so no torch or diffusers is pulled in.
+# huggingface-hub fetches checkpoints on demand; tokenizers reads the T5
+# vocabulary FLUX conditions on (CLIP reuses the vendored BPE in clip/).
+huggingface-hub>=0.30,<2.0
+tokenizers>=0.20,<1.0
+
 # -- core numerics / image / video --
 numpy>=2.0,<3.0
 opencv-python-headless==4.12.0.88
