@@ -65,49 +65,6 @@ def _update_for(spec: ModelSpec, key: str, **extra):
     return gr.update(**_settings_for(spec, key, **extra))
 
 
-def _bounds(spec: ModelSpec, key: str) -> tuple:
-    o = spec.overrides.get(key, {})
-    return o.get("minimum", 256), o.get("maximum", 1536)
-
-
-def fit_to_model(spec: ModelSpec, width: int, height: int,
-                 step: int = 64) -> tuple:
-    """Output size matching an upload's aspect, at the model's native scale.
-
-    Two things go wrong with a fixed default. Kontext and SDXL generate a
-    fresh canvas at whatever size is asked for, so a portrait photo into a
-    square default comes back resampled and soft. And simply copying the
-    upload's pixel dimensions is just as bad the other way -- a 4000x3000
-    photo would push SD 1.5 far off the resolution it was trained at.
-
-    So: keep the aspect ratio, scale to the model's native pixel *area*, then
-    clamp and snap to the slider's step.
-    """
-    if not width or not height:
-        return None, None
-    lo, hi = _bounds(spec, P_WIDTH)
-    scale = (spec.native_size ** 2 / float(width * height)) ** 0.5
-    out = []
-    for value in (width * scale, height * scale):
-        snapped = int(round(value / step)) * step
-        out.append(max(lo, min(hi, snapped)))
-    return out[0], out[1]
-
-
-def on_image_uploaded(image, label: str):
-    """Match the output size to the uploaded image when a model uses it."""
-    spec = registry.get(label)
-    if image is None or P_WIDTH not in spec.params:
-        return gr.update(), gr.update()
-    size = getattr(image, "size", None)
-    if not size:
-        return gr.update(), gr.update()
-    w, h = fit_to_model(spec, *size)
-    if w is None:
-        return gr.update(), gr.update()
-    return gr.update(value=w), gr.update(value=h)
-
-
 def diffusion_tab():
     first = registry.MODELS[0]
 
@@ -181,11 +138,6 @@ def diffusion_tab():
                           "models)",
                     type="pil", height=320,
                 )
-                gr.Markdown(
-                    "<span>Output width/height follow the uploaded image's "
-                    "aspect ratio at the model's native scale — override them "
-                    "below if you want a different framing.</span>"
-                )
                 output_gallery = gr.Gallery(label="Output", height=460,
                                             columns=2, object_fit="contain")
                 status = gr.Markdown("")
@@ -194,14 +146,8 @@ def diffusion_tab():
                     strength, clip_skip, seed, batch]
 
         model_dd.change(
-            fn=on_model_changed, inputs=[model_dd, input_image],
+            fn=on_model_changed, inputs=[model_dd],
             outputs=[model_info] + controls,
-        )
-        # Editing models render a fresh canvas at whatever size is requested,
-        # so a portrait photo left at a square default comes back resampled.
-        input_image.change(
-            fn=on_image_uploaded, inputs=[input_image, model_dd],
-            outputs=[width, height],
         )
 
         # -- generation ---------------------------------------------------
@@ -213,26 +159,10 @@ def diffusion_tab():
         unload_btn.click(fn=on_unload, outputs=[status])
 
 
-def on_model_changed(label: str, image=None):
-    """Reconfigure every control for the newly selected model.
-
-    When an image is already loaded, the size controls follow it rather than
-    snapping back to the new model's fixed default.
-    """
+def on_model_changed(label: str):
+    """Reconfigure every control for the newly selected model."""
     spec = registry.get(label)
     samplers = registry.samplers_for(spec)
-
-    size = getattr(image, "size", None) if image is not None else None
-    fitted = fit_to_model(spec, *size) if size else (None, None)
-
-    # Built by hand rather than via _update_for: that applies the model's
-    # overrides last, so an override's fixed value would win over the size
-    # we just fitted to the image.
-    width_kwargs = _settings_for(spec, P_WIDTH)
-    height_kwargs = _settings_for(spec, P_HEIGHT)
-    if fitted[0] is not None and P_WIDTH in spec.params:
-        width_kwargs["value"], height_kwargs["value"] = fitted
-
     return (
         _describe(spec),
         _update_for(spec, P_PROMPT),
@@ -241,8 +171,8 @@ def on_model_changed(label: str, image=None):
         _update_for(spec, P_GUIDANCE, label="Guidance (CFG)"),
         gr.update(visible=len(samplers) > 1, choices=samplers,
                   value=samplers[0]),
-        gr.update(**width_kwargs),
-        gr.update(**height_kwargs),
+        _update_for(spec, P_WIDTH),
+        _update_for(spec, P_HEIGHT),
         _update_for(spec, P_STRENGTH),
         _update_for(spec, P_CLIP_SKIP),
         _update_for(spec, P_SEED),

@@ -225,50 +225,6 @@ def test_rope_rotation_preserves_vector_norm():
                        atol=1e-3).item()
 
 
-# -- output size follows the uploaded image ---------------------------------
-def _fit(model_key, w, h):
-    from ui.tabs.diffusion_tab import fit_to_model
-    return fit_to_model(registry.BY_KEY[model_key], w, h)
-
-
-def test_output_size_keeps_the_uploaded_aspect_ratio():
-    # A portrait photo must not come back square: edit models render a fresh
-    # canvas at the requested size, so a square default resamples the subject.
-    w, h = _fit("flux_kontext", 1536, 1920)
-    assert h > w
-    assert abs((w / h) - (1536 / 1920)) < 0.1
-
-
-def test_output_size_targets_the_model_native_scale_not_the_upload():
-    # A 12 MP phone photo must not drive SD 1.5 far off its training
-    # resolution, nor SDXL far below its own.
-    sd_w, sd_h = _fit("dreamshaper", 4000, 3000)
-    xl_w, xl_h = _fit("sdxl", 4000, 3000)
-    assert (sd_w * sd_h) ** 0.5 < (xl_w * xl_h) ** 0.5
-    assert 384 <= sd_w <= 832
-    assert 768 <= xl_w <= 1536
-
-
-def test_output_size_snaps_to_the_slider_step_and_bounds():
-    for key in ("dreamshaper", "sdxl", "flux_kontext"):
-        spec = registry.BY_KEY[key]
-        lo = spec.overrides.get(registry.P_WIDTH, {}).get("minimum", 256)
-        hi = spec.overrides.get(registry.P_WIDTH, {}).get("maximum", 1536)
-        for dims in [(4000, 3000), (100, 100), (1920, 1080), (640, 1600)]:
-            w, h = _fit(key, *dims)
-            assert w % 64 == 0 and h % 64 == 0, (key, dims, w, h)
-            assert lo <= w <= hi and lo <= h <= hi, (key, dims, w, h)
-
-
-def test_square_upload_gives_square_output():
-    w, h = _fit("flux_kontext", 1024, 1024)
-    assert w == h
-
-
-def test_degenerate_size_is_ignored_rather_than_dividing_by_zero():
-    assert _fit("sdxl", 0, 0) == (None, None)
-
-
 # -- schedulers -------------------------------------------------------------
 def _sd_config():
     return {"num_train_timesteps": 1000, "beta_start": 0.00085,
