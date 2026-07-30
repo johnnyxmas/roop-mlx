@@ -12,13 +12,6 @@ mlx>=0.20.0; sys_platform == "darwin" and platform_machine == "arm64"
 # blocks python 3.14.  CoreML EP and swap parity verified on 1.28.
 onnxruntime>=1.28,<2.0; sys_platform == "darwin" and platform_machine == "arm64"
 
-# -- diffusion tab (roop/diffusion): the SD 1.5 / SDXL / FLUX stacks are
-# implemented directly in MLX, so no torch or diffusers is pulled in.
-# huggingface-hub fetches checkpoints on demand; tokenizers reads the T5
-# vocabulary FLUX conditions on (CLIP reuses the vendored BPE in clip/).
-huggingface-hub>=0.30,<2.0
-tokenizers>=0.20,<1.0
-
 # -- core numerics / image / video --
 # opencv 5 (2026-07): verified against every cv2 symbol this repo calls (59 of
 # them, incl. dnn.NMSBoxes/blobFromImage, calcOpticalFlowPyrLK and the photo
