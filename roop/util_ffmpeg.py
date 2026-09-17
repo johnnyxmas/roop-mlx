@@ -51,6 +51,44 @@ def detect_videotoolbox() -> bool:
     return _videotoolbox_available
 
 
+_fps_mode_supported = None
+
+
+def detect_fps_mode() -> bool:
+    """Probe whether this ffmpeg accepts ``-fps_mode``.
+
+    ffmpeg 9 removed the ``-vsync`` alias outright ("Unrecognized option
+    'vsync'"), which breaks frame extraction with an argument-parse error
+    before any decoding happens.  ``-fps_mode`` has been the supported
+    spelling since ffmpeg 5.0.  Probed with a dry run, like
+    ``detect_videotoolbox``, so the answer matches the binary on PATH.
+    """
+    global _fps_mode_supported
+    if _fps_mode_supported is not None:
+        return _fps_mode_supported
+    try:
+        subprocess.check_output(
+            [
+                "ffmpeg", "-hide_banner", "-y", "-loglevel", "error",
+                "-f", "lavfi", "-i", "nullsrc=s=16x16:d=0.04",
+                "-fps_mode", "passthrough",
+                "-f", "null", "-",
+            ],
+            stderr=subprocess.STDOUT,
+        )
+        _fps_mode_supported = True
+    except Exception:
+        _fps_mode_supported = False
+    return _fps_mode_supported
+
+
+def get_fps_mode_args() -> List[str]:
+    """Args for "one output frame per input frame, no dupes or drops"."""
+    if detect_fps_mode():
+        return ["-fps_mode", "passthrough"]
+    return ["-vsync", "0"]
+
+
 def get_quality_args(codec: str, quality: int) -> List[str]:
     """Return the correct quality arguments for the given codec.
 
@@ -399,8 +437,7 @@ def extract_frames(
         )
     commands.extend(
         [
-            "-vsync",
-            "0",
+            *get_fps_mode_args(),
             os.path.join(
                 temp_directory_path, "%06d." + roop.globals.CFG.output_image_format
             ),

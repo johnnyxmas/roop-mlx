@@ -149,3 +149,45 @@ def test_writer_coerces_malformed_frames_without_shear(tmp_path, kind):
     # A sheared frame wraps content and breaks the left-to-right ramp.
     col_means = decoded.mean(axis=(0, 2))
     assert np.all(np.diff(col_means) >= -3), "output frame is sheared"
+
+
+@needs_ffmpeg
+def test_fps_mode_args_are_accepted_by_this_ffmpeg():
+    """ffmpeg 9 removed ``-vsync``; the extract path must use what is installed.
+
+    Asserts against the real binary on PATH rather than a version string, so
+    the test keeps passing on ffmpeg 5-8 (where both spellings work) and fails
+    loudly if the chosen flag is ever rejected again.
+    """
+    from roop import util_ffmpeg
+
+    util_ffmpeg._fps_mode_supported = None
+    args = util_ffmpeg.get_fps_mode_args()
+
+    proc = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error",
+         "-f", "lavfi", "-i", "nullsrc=s=16x16:d=0.04", *args,
+         "-f", "null", "-"],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "Unrecognized option" not in proc.stderr
+
+
+@needs_ffmpeg
+def test_extract_frames_writes_frames(tmp_path, monkeypatch):
+    """End-to-end guard on the keep-frames / Extras extraction path."""
+    import roop.globals
+    from roop import util_ffmpeg
+    from roop import utilities as util
+
+    class _CFG:
+        output_image_format = "png"
+
+    monkeypatch.setattr(roop.globals, "CFG", _CFG(), raising=False)
+
+    clip = tmp_path / "clip.mp4"
+    _make_clip(clip, size="64x64", frames=5)
+
+    assert util_ffmpeg.extract_frames(str(clip), None, None, 30.0) is True
+    assert len(util.get_temp_frame_paths(str(clip))) == 5
