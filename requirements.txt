@@ -9,7 +9,11 @@ mlx>=0.20.0; sys_platform == "darwin" and platform_machine == "arm64"
 # MLX interpreter for the detector stack and large enhancers (see
 # roop/inference.py for the per-model backend split).
 # 1.28 is the floor: 1.27 ships no cp314 wheel, so an older bound silently
-# blocks python 3.14.  CoreML EP and swap parity verified on 1.28.
+# blocks python 3.14.  CoreML EP and swap parity verified on 1.28 and on
+# 1.30 (2026-09-16, full suite green on both).  1.30 brings nothing Apple-
+# specific -- its changes are CUDA/WebGPU/Arm64-CPU kernels -- and it does
+# NOT fix RestoreFormer++'s unloadable compile cache, which inference.py
+# handles with a version-stamped .nocache marker.
 onnxruntime>=1.28,<2.0; sys_platform == "darwin" and platform_machine == "arm64"
 
 # -- core numerics / image / video --
