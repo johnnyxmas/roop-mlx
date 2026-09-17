@@ -110,3 +110,68 @@ def test_weight_reaches_the_model_end_to_end():
     assert np.array_equal(neutral, run(0.5)), "swap is not deterministic"
     assert not np.allclose(neutral, run(0.2)), "lower weight had no effect"
     assert not np.allclose(neutral, run(0.9)), "higher weight had no effect"
+
+
+@requires_model("alphaface_256.onnx")
+def test_alphaface_source_choice_is_output_equivalent_and_keeps_the_weight_live():
+    """Why this port feeds AlphaFace the unit-norm vector, not the raw one.
+
+    Upstream uses source_face.embedding.  AlphaFace normalises its source
+    internally, so both give the same swap -- but a +-0.35 identity shift is
+    negligible against a raw ArcFace vector and meaningful against a unit-norm
+    one, so the raw choice would silently disable the weight slider for this
+    model alone.
+    """
+    import onnxruntime as ort
+
+    from conftest import model_path
+
+    ort.set_default_logger_severity(3)
+    rng = np.random.default_rng(4)
+    raw = (rng.normal(size=(1, 512)) * 20).astype(np.float32)
+    unit = raw / np.linalg.norm(raw)
+    target = (rng.normal(size=512) * 20).astype(np.float32)
+    frame = rng.uniform(0, 1, (1, 3, 256, 256)).astype(np.float32)
+
+    sess = ort.InferenceSession(
+        model_path("alphaface_256.onnx"), providers=["CPUExecutionProvider"]
+    )
+
+    def swap(source):
+        return sess.run(
+            None, {"source": source.astype(np.float32), "target": frame}
+        )[0].astype(np.float64)
+
+    # Same swap either way: the model normalises the source itself.
+    assert np.abs(swap(raw) - swap(unit)).max() < 1e-3
+
+    def weight_effect(base):
+        neutral = swap(balance_source_embedding(base, target, 0.5))
+        shifted = swap(balance_source_embedding(base, target, 0.2))
+        return np.abs(neutral - shifted).max()
+
+    assert weight_effect(raw) < 0.01, "raw vector should barely move (upstream)"
+    assert weight_effect(unit) > 0.05, "unit-norm vector must keep the weight live"
+
+
+@requires_model("alphaface_256.onnx")
+def test_alphaface_runs_through_the_processor():
+    """Smoke test of the whole plugin path: routing, session, I/O shape."""
+    from roop.processors.FaceSwapFaceFusion import FaceSwapFaceFusion
+
+    rng = np.random.default_rng(23)
+    emb = rng.normal(size=512).astype(np.float32)
+    src = _FakeFace(normed_embedding=emb / np.linalg.norm(emb), embedding=emb)
+    tgt = _FakeFace(embedding=rng.normal(size=512).astype(np.float32))
+    frame = rng.uniform(0, 1, (1, 3, 256, 256)).astype(np.float32)
+
+    proc = FaceSwapFaceFusion()
+    proc.Initialize({"modelname": "AlphaFace 256", "swapper_weight": 0.5})
+    try:
+        assert proc.swap_type == "alphaface"
+        out = np.asarray(proc.Run(src, tgt, frame))
+        assert out.shape == (1, 3, 256, 256)
+        # mean 0 / std 1 model: output is [0,1], not the +-1 HyperSwap range.
+        assert -0.05 <= out.min() and out.max() <= 1.05
+    finally:
+        proc.Release()

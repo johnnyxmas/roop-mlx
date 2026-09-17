@@ -16,6 +16,7 @@ def _backend_name(session) -> str:
     (("buffalo_l", "genderage.onnx"),    "InferenceSession"),
     (("Frame", "span_kendata_x4.onnx"),  "InferenceSession"),
     (("GFPGANv1.4.onnx",),               "OnnxMLXSession"),
+    (("alphaface_256.onnx",),            "InferenceSession"),
     (("Frame", "real_esrgan_x2.onnx"),   "OnnxMLXSession"),
     (("GPEN-BFR-512.onnx",),             "OnnxMLXSession"),
     (("xseg.onnx",),                     "OnnxMLXSession"),

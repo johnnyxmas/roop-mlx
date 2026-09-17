@@ -7,9 +7,11 @@ SWAP_MODEL_OUTPUT_SIZES = {
     "HyperSwap 1A": 256,
     "HyperSwap 1B": 256,
     "HyperSwap 1C": 256,
+    "AlphaFace 256": 256,
 }
 
-FF_SWAP_MODELS = {"HyperSwap 1A", "HyperSwap 1B", "HyperSwap 1C"}
+# Models handled by FaceSwapFaceFusion rather than FaceSwapInsightFace.
+FF_SWAP_MODELS = {"HyperSwap 1A", "HyperSwap 1B", "HyperSwap 1C", "AlphaFace 256"}
 
 
 class ProcessOptions:

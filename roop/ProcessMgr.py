@@ -1068,6 +1068,9 @@ class ProcessMgr:
             swap_frame = swap_frame.transpose(2, 0, 1)
             swap_frame = np.expand_dims(swap_frame, axis=0).astype(np.float32)
         else:
+            # inswapper and alphaface both declare mean 0 / std 1 in
+            # FaceFusion's MODEL_SET, i.e. plain [0,1] scaling with no
+            # denormalisation on the way out (see normalize_swap_frame).
             model_mean = [0.0, 0.0, 0.0]
             model_standard_deviation = [1.0, 1.0, 1.0]
             swap_frame = swap_frame[:, :, ::-1] / 255.0

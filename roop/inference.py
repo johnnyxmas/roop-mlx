@@ -24,6 +24,10 @@ _COREML_MODELS = {
     "restoreformer_plus_plus.onnx",
     "CodeFormerv0.1.onnx",
     "inswapper_128.onnx",
+    # AlphaFace (added 2026-09-16): CoreML 132 ms vs MLX interpreter 279 ms
+    # (fp16 is no faster at 298 ms) and CPU EP 909 ms.  Note it costs ~5x
+    # HyperSwap at the same 256px output -- it is 556 MB of weights.
+    "alphaface_256.onnx",
     "hyperswap_1a_256.onnx",
     "hyperswap_1b_256.onnx",
     "hyperswap_1c_256.onnx",

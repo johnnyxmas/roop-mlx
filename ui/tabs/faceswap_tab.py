@@ -46,6 +46,7 @@ model_swap_choices = [
     "HyperSwap 1A",
     "HyperSwap 1B",
     "HyperSwap 1C",
+    "AlphaFace 256",
 ]
 
 DEFAULT_SWAP_MODEL = "HyperSwap 1A"

@@ -31,7 +31,7 @@ def test_pixel_boost_roundtrip(mgr):
     assert np.array_equal(out, img)
 
 
-@pytest.mark.parametrize("model_type", ["inswapper", "ghost"])
+@pytest.mark.parametrize("model_type", ["inswapper", "ghost", "alphaface"])
 def test_prepare_normalize_roundtrip(mgr, model_type):
     """normalize must invert prepare (up to uint8 rounding)."""
     mgr._get_swap_type = lambda: model_type

@@ -30,8 +30,10 @@ def balance_source_embedding(source_embedding, target_embedding, weight: float):
     "target-ward <-> source-ward", not a blend amount.
 
     The target is L2-normalised before blending and the result deliberately is
-    NOT renormalised, matching upstream.  *source_embedding* is expected to be
-    unit-norm already (both swap processors pass ``normed_embedding``).
+    NOT renormalised, matching upstream.  Every caller passes a unit-norm
+    source, which is what keeps one slider position meaning the same thing
+    across models: a +-0.35 shift is proportionally negligible against a raw
+    ArcFace vector (see FaceSwapFaceFusion for the measurement).
 
     Returns the source unchanged at the neutral weight, or when the target
     carries no embedding -- a face reused by the tracker across frames may have

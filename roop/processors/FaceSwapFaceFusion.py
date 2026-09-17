@@ -1,9 +1,21 @@
 """FaceSwapFaceFusion -- MLX backend.
 
-Handles the FaceFusion / HyperSwap family (hyperswap_1a/1b/1c_256).
-Unlike InsightFace inswapper, HyperSwap takes the raw normed_embedding
-directly (no emap projection) and returns both the swapped face and a
-blend mask (mask is not used by the caller).
+Handles the FaceFusion swappers: HyperSwap 1a/1b/1c_256 and AlphaFace 256
+(arXiv 2601.16429).  Unlike InsightFace inswapper, both take an ArcFace
+vector directly (no emap projection) and return the swapped face plus a
+blend mask (the mask is not used by the caller).
+
+Both are fed the unit-norm embedding.  FaceFusion hands AlphaFace the raw
+ArcFace vector instead, but AlphaFace L2-normalises its source internally
+-- verified on the shipped weights: the output is bit-identical for a 2x
+scaled vector, and raw vs unit-norm differ by 1.7e-5 -- so the choice
+cannot change the swap, while the raw vector WOULD break the identity
+weight: a +-0.35 shift against a norm-450 vector moved the output by
+0.0006, against 0.23 for the unit-norm one.
+
+Both share arcface_128 alignment at 256px; their pixel normalisation
+differs and lives in ProcessMgr.prepare_crop_frame (AlphaFace uses
+inswapper's plain [0,1] scaling, HyperSwap the +-1 range).
 """
 
 import os
@@ -47,6 +59,14 @@ class FaceSwapFaceFusion:
             "swap_type": "hyperswap",
             "size": 256,
         },
+        "AlphaFace 256": {
+            "file": "alphaface_256.onnx",
+            "url": "https://huggingface.co/facefusion/models-3.9.0/resolve/main/alphaface_256.onnx",
+            "crossface": None,
+            "crossface_url": None,
+            "swap_type": "alphaface",
+            "size": 256,
+        },
     }
 
     def Initialize(self, plugin_options: dict):
@@ -67,7 +87,7 @@ class FaceSwapFaceFusion:
 
         model_path = resolve_relative_path("../models/" + config["file"])
         if not os.path.exists(model_path):
-            raise FileNotFoundError(f"HyperSwap model not found: {model_path}")
+            raise FileNotFoundError(f"Swap model not found: {model_path}")
 
         self._session = create_session(model_path)
         self._output_name = self._session.get_outputs()[0].name

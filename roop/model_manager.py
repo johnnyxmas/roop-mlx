@@ -21,6 +21,10 @@ ALL_MODELS = [
     ("", "reswapper_256.onnx",
      ["https://huggingface.co/countfloyd/deepfake/resolve/main/reswapper_256.onnx"]),
 
+    # -- face swap (FaceFusion / AlphaFace, arXiv 2601.16429) --
+    ("", "alphaface_256.onnx",
+     ["https://huggingface.co/facefusion/models-3.9.0/resolve/main/alphaface_256.onnx"]),
+
     # -- face swap (FaceFusion / HyperSwap) --
     ("", "hyperswap_1a_256.onnx",
      ["https://huggingface.co/facefusion/models-3.3.0/resolve/main/hyperswap_1a_256.onnx"]),
