@@ -6,12 +6,12 @@ get_outputs / run):
 - onnxruntime with the CoreML execution provider (GPU/ANE via MLProgram)
 - OnnxMLXSession, the in-repo ONNX-to-MLX graph interpreter
 
-Benchmarked head-to-head (M-series, 2026-07): CoreML is 2-4x faster for
-the detector stack (yoloface, ArcFace, 2d106det) and the large enhancers
-(GFPGAN, RestoreFormer++, CodeFormer), and matches the ONNX reference
-where the interpreter has measurable numerical drift on the transformer
-enhancers.  The interpreter stays faster for GPEN and XSeg, and
-inswapper_128 uses the hand-ported native MLX model instead of either.
+Benchmarked head-to-head (M-series, 2026-07; re-measured 2026-09 on
+macOS 27): CoreML is 2-4x faster for the detector stack (yoloface,
+ArcFace, 2d106det) and the transformer enhancers (RestoreFormer++,
+CodeFormer), where it also matches the ONNX reference the interpreter
+drifts from.  The interpreter stays faster for GPEN, XSeg and — since the
+2026-09 re-benchmark — GFPGAN, and inswapper_128 runs on CoreML.
 """
 
 import os
@@ -21,7 +21,6 @@ _COREML_MODELS = {
     "w600k_r50.onnx",
     "2d106det.onnx",
     "genderage.onnx",
-    "GFPGANv1.4.onnx",
     "restoreformer_plus_plus.onnx",
     "CodeFormerv0.1.onnx",
     "inswapper_128.onnx",
@@ -33,12 +32,29 @@ _COREML_MODELS = {
     # Frame upscaler: SPAN is 2.5x faster on CoreML than the MLX interpreter
     # (2.2 vs 5.4 ms/tile) with 1.6e-5 parity; the static 128x128 tile
     # pinning (_STATIC_DIM_SIZES) keeps it off the E5RT unbounded-dim path.
-    # real_esrgan_x2, deoldify and isnet stay on the MLX interpreter — x2
-    # partitions poorly on CoreML (5x slower) and the other two fail CoreML
-    # compilation outright.  (real_esrgan_x4/lsdir_x4 retired 2026-07:
+    # real_esrgan_x2, deoldify and isnet stay on the MLX interpreter.
+    # Re-measured 2026-09-16 (macOS 27, ORT 1.28) at production input sizes:
+    # esrgan_x2 110 vs 46 ms per 128px tile, isnet 180 vs 125 ms, deoldify
+    # still fails CoreML compilation outright ("Failed to build the model
+    # execution plan").  isnet now *compiles* on CoreML — the older note that
+    # it could not is stale — but the interpreter is still faster, so the
+    # routing is unchanged.  (real_esrgan_x4/lsdir_x4 retired 2026-07:
     # span_kendata_x4 beat both on quality and speed.)
     "span_kendata_x4.onnx",
 }
+
+# GFPGAN moved OFF CoreML 2026-09-16 (it was routed there in f40fd16).
+# Re-benchmarked on this machine: MLX interpreter 222 ms vs CoreML 309 ms
+# (CPU EP 418 ms), a 28% win.  Unlike its commit-mates CodeFormer and
+# RestoreFormer++ — which went to CoreML because the interpreter drifted by
+# 1.37 and 3.58 against the ONNX reference — GFPGAN's interpreter output is
+# 58.1 dB PSNR vs the ORT CPU reference on face-like input (max 8/255 at the
+# worst pixel, mean 0.2 levels), the same league as GPEN-512's 69.1 dB, which
+# has always run on the interpreter.  See test_gfpgan_interpreter_parity.
+#
+# SpecializationStrategy=FastPrediction (which FaceFusion sets) was A/B'd
+# across all 19 models the same day: neutral everywhere and actively worse on
+# 2d106det (0.62 -> 1.35 ms).  Deliberately not set.
 
 # Models that ran fp16 on the MLX interpreter before moving to CoreML;
 # keep that dtype if the CoreML session ever falls back to MLX.
@@ -136,10 +152,20 @@ def _static_model_path(model_path: str) -> str:
 # during app startup) can write a *corrupted* compiled-model cache entry.
 # Every session loading that entry then fails every run() with
 # "output_features has no value for ..." — permanently, until the cache is
-# cleared (reproduced deterministically with RestoreFormer++ vs prewarm).
-# Creation is therefore serialized, and each new session is validated with
-# a dummy inference; a validation failure wipes the compile cache and
-# recompiles once, which heals caches poisoned before the lock existed.
+# cleared.  Creation is therefore serialized, and each new session is
+# validated with a dummy inference.
+#
+# RestoreFormer++ is NOT that race (diagnosis corrected 2026-09-16): two
+# sequential single-threaded processes each found its cached entry corrupt,
+# so its compiled MLProgram is deterministically unloadable — recompiling
+# just writes the same bad entry again.  Two consequences shaped the code
+# below.  First, each model gets its OWN cache directory: the old shared
+# directory meant RestoreFormer++'s heal wiped every other model's compiled
+# entry on every launch (measured: 7+ entries down to 1), so the on-disk
+# cache never survived a run and every model recompiled from scratch.
+# Second, a model that fails validation twice is given a session with no
+# ModelCacheDirectory at all — it compiles in-memory each launch (~3 s for
+# RestoreFormer++) instead of poisoning a cache entry forever.
 _COREML_CREATE_LOCK = __import__("threading").Lock()
 
 _NP_DTYPES = {
@@ -172,52 +198,215 @@ def _validate_session(sess) -> bool:
         return False
 
 
+_PRUNED_CACHE_ROOTS = set()
+
+_CACHE_DIR_NAME = "coreml_cache"
+
+
+def _entry_owner(entry: str):
+    """Model filename an entry under a cache root belongs to, or None.
+
+    The layout is ``coreml_cache/<model>.onnx/`` for a compiled MLProgram,
+    ``coreml_cache/<model>.onnx.nocache`` for the uncacheable marker, and
+    ``coreml_cache/<model>.onnx.static.<dims>.onnx`` for a dim-pinned rewrite.
+    """
+    if entry.endswith(".nocache"):
+        return entry[: -len(".nocache")]
+    if ".static." in entry and entry.endswith(".onnx"):
+        return entry.split(".static.", 1)[0]
+    if entry.endswith(".onnx"):
+        return entry
+    return None
+
+
+def _prune_cache_root(cache_root: str) -> int:
+    """Delete unreachable entries under one ``coreml_cache`` directory.
+
+    Removes (a) all-digit directories written by the pre-2026-09 shared-cache
+    layout, which nothing looks up any more, (b) a nested ``coreml_cache``
+    left by an older path-derivation bug, and (c) entries whose model is no
+    longer on disk — retired models, or ones never downloaded.  Returns bytes
+    reclaimed.  Everything it deletes is regenerated on demand by the next
+    compile, so it is safe to run at any point in the lifecycle.
+    """
+    import shutil
+
+    models_dir = os.path.dirname(cache_root)
+    freed = 0
+    try:
+        entries = os.listdir(cache_root)
+    except OSError:
+        return 0
+
+    for entry in entries:
+        full = os.path.join(cache_root, entry)
+        stale = False
+        if os.path.isdir(full) and (entry.isdigit() or entry == _CACHE_DIR_NAME):
+            stale = True  # legacy layout
+        else:
+            owner = _entry_owner(entry)
+            if owner is not None and not os.path.exists(
+                os.path.join(models_dir, owner)
+            ):
+                stale = True  # model retired or never downloaded
+        if not stale:
+            continue
+        freed += _dir_size(full)
+        if os.path.isdir(full):
+            shutil.rmtree(full, ignore_errors=True)
+        else:
+            try:
+                os.remove(full)
+            except OSError:
+                pass
+    return freed
+
+
+def _dir_size(path: str) -> int:
+    if os.path.isfile(path):
+        try:
+            return os.path.getsize(path)
+        except OSError:
+            return 0
+    total = 0
+    for dirpath, _, filenames in os.walk(path):
+        for fname in filenames:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, fname))
+            except OSError:
+                pass
+    return total
+
+
+def prune_compile_caches(models_root: str = None) -> int:
+    """Sweep every ``coreml_cache`` under *models_root*.  Returns bytes freed.
+
+    Called at launch and at shutdown so orphaned compiled models cannot
+    accumulate: before the per-model layout they reached 7 GB here, since
+    every wipe-and-recompile cycle wrote a fresh ORT-hashed directory and
+    nothing ever removed the old one.
+    """
+    if models_root is None:
+        from roop.utilities import resolve_relative_path
+
+        models_root = resolve_relative_path("../models")
+
+    # Never delete underneath a compile in flight: a half-written entry is
+    # exactly the corruption this whole mechanism exists to avoid.
+    if not _COREML_CREATE_LOCK.acquire(blocking=False):
+        return 0
+    try:
+        freed = 0
+        for dirpath, dirnames, _ in os.walk(models_root):
+            if os.path.basename(dirpath) == _CACHE_DIR_NAME:
+                freed += _prune_cache_root(dirpath)
+                dirnames[:] = []  # _prune_cache_root already handled nesting
+    finally:
+        _COREML_CREATE_LOCK.release()
+    if freed:
+        print(f"Reclaimed {freed / 1e9:.2f} GB of stale CoreML compile caches")
+    return freed
+
+
+def _prune_legacy_cache(cache_root: str) -> None:
+    """Prune one cache root, at most once per process (session-creation path)."""
+    if cache_root in _PRUNED_CACHE_ROOTS:
+        return
+    _PRUNED_CACHE_ROOTS.add(cache_root)
+    _prune_cache_root(cache_root)
+
+
+def _cache_hostile_marker(cache_root: str, name: str) -> str:
+    """Path of the marker recording that caching is broken for this model."""
+    return os.path.join(cache_root, name + ".nocache")
+
+
+def _cache_is_hostile(marker: str) -> bool:
+    """True if this model is known-unloadable from cache on this ORT/macOS.
+
+    The marker records the versions it was written under, so a future
+    onnxruntime or macOS upgrade re-tests caching instead of writing the
+    model off forever.
+    """
+    try:
+        with open(marker) as fh:
+            return fh.read().strip() == _runtime_fingerprint()
+    except OSError:
+        return False
+
+
+def _runtime_fingerprint() -> str:
+    import platform
+
+    import onnxruntime as ort
+
+    return f"{ort.__version__} {platform.mac_ver()[0]}"
+
+
 def _create_coreml_session(model_path: str):
     import onnxruntime as ort
 
     ort.set_default_logger_severity(3)
+    name = os.path.basename(model_path)
     # Cache compiled MLPrograms next to the model so only the first launch
-    # pays CoreML compilation (up to ~20s for CodeFormer).
-    cache_dir = os.path.join(os.path.dirname(model_path), "coreml_cache")
-    os.makedirs(cache_dir, exist_ok=True)
+    # pays CoreML compilation (up to ~20s for CodeFormer).  One directory per
+    # model, so healing one model cannot destroy another's entry.
+    cache_root = os.path.join(os.path.dirname(model_path), "coreml_cache")
+    cache_dir = os.path.join(cache_root, name)
+    _prune_legacy_cache(cache_root)
+    marker = _cache_hostile_marker(cache_root, name)
 
-    def _build():
+    def _build(use_cache: bool = True):
+        options = {
+            "ModelFormat": "MLProgram",
+            "MLComputeUnits": "ALL",
+        }
+        if use_cache:
+            options["ModelCacheDirectory"] = cache_dir
         return ort.InferenceSession(
             _static_model_path(model_path),
             providers=[
-                ("CoreMLExecutionProvider", {
-                    "ModelFormat": "MLProgram",
-                    "MLComputeUnits": "ALL",
-                    "ModelCacheDirectory": cache_dir,
-                }),
+                ("CoreMLExecutionProvider", options),
                 "CPUExecutionProvider",
             ],
         )
 
+    def _uncached():
+        sess = _build(use_cache=False)
+        if not _validate_session(sess):
+            raise RuntimeError(
+                f"CoreML session for {name} still failing without a cache"
+            )
+        return sess
+
     with _COREML_CREATE_LOCK:
+        if _cache_is_hostile(marker):
+            # Known bad: skip the load-fail-wipe-recompile cycle entirely.
+            return _uncached()
+
+        os.makedirs(cache_dir, exist_ok=True)
         sess = _build()
         if _validate_session(sess):
             return sess
-        # Poisoned compile cache — wipe every compiled entry in this models
-        # dir (static .onnx rewrites are kept) and compile fresh.
+
+        # The compiled entry on disk is unloadable.  An in-process recompile
+        # always validates — it is the NEXT process that trips over it — so
+        # healing alone would repeat this every launch.  Record that caching
+        # is broken for this model under this ORT/macOS and run uncached.
         import shutil
 
         print(
-            f"Corrupt CoreML compile cache detected for "
-            f"{os.path.basename(model_path)}; clearing {cache_dir} and recompiling."
+            f"CoreML compile cache is unusable for {name}; "
+            "running uncached from now on (recompiles each launch)."
         )
         del sess
-        for entry in os.listdir(cache_dir):
-            full = os.path.join(cache_dir, entry)
-            if os.path.isdir(full):
-                shutil.rmtree(full, ignore_errors=True)
-        sess = _build()
-        if not _validate_session(sess):
-            raise RuntimeError(
-                f"CoreML session for {os.path.basename(model_path)} still "
-                "failing after cache reset"
-            )
-        return sess
+        shutil.rmtree(cache_dir, ignore_errors=True)
+        try:
+            with open(marker, "w") as fh:
+                fh.write(_runtime_fingerprint())
+        except OSError:
+            pass
+        return _uncached()
 
 
 def prewarm_sessions_async():

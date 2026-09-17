@@ -73,6 +73,13 @@ def pre_check() -> bool:
     update_status("Verifying model integrity...")
     verify_all_models()
 
+    # Compiled CoreML models are regenerable, and stale ones are unreachable
+    # dead weight (they had reached 7 GB before the per-model cache layout).
+    # Swept at launch and again in destroy().
+    from roop.inference import prune_compile_caches
+
+    prune_compile_caches()
+
     if not shutil.which("ffmpeg"):
         update_status("ffmpeg is not installed.")
     return True
@@ -474,6 +481,16 @@ def destroy() -> None:
 
     cleanup_cache_folders()
     release_resources()
+
+    # Sweep on the way out too, but only on a quiet exit: destroy() is also
+    # the SIGINT handler (see the signal.signal call above), and a Ctrl+C
+    # mid-job leaves worker threads holding sessions whose cache entries this
+    # would delete.  The launch sweep in pre_check() covers that case safely —
+    # nothing can create orphans while the app is down.
+    if not roop.globals.processing:
+        from roop.inference import prune_compile_caches
+
+        prune_compile_caches()
     sys.exit()
 
 

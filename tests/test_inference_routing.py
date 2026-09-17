@@ -15,6 +15,7 @@ def _backend_name(session) -> str:
     (("buffalo_l", "2d106det.onnx"),     "InferenceSession"),
     (("buffalo_l", "genderage.onnx"),    "InferenceSession"),
     (("Frame", "span_kendata_x4.onnx"),  "InferenceSession"),
+    (("GFPGANv1.4.onnx",),               "OnnxMLXSession"),
     (("Frame", "real_esrgan_x2.onnx"),   "OnnxMLXSession"),
     (("GPEN-BFR-512.onnx",),             "OnnxMLXSession"),
     (("xseg.onnx",),                     "OnnxMLXSession"),
@@ -129,3 +130,47 @@ def test_hyperswap_processor_session():
         assert p.swap_type == "hyperswap"
     finally:
         p.Release()
+
+
+def test_prune_removes_unreachable_cache_entries(tmp_path):
+    """Launch/shutdown sweep: legacy layout and orphans go, live entries stay."""
+    from roop.inference import prune_compile_caches
+
+    models = tmp_path / "models"
+    cache = models / "coreml_cache"
+    models.mkdir()
+    (models / "live.onnx").write_bytes(b"x" * 10)
+
+    # Live entries: compiled dir, marker and dim-pinned rewrite for a model
+    # that is still on disk.
+    (cache / "live.onnx").mkdir(parents=True)
+    (cache / "live.onnx" / "model.mil").write_bytes(b"y" * 100)
+    (cache / "live.onnx.nocache").write_text("1.28.0 27.0")
+    (cache / "live.onnx.static.1.onnx").write_bytes(b"z" * 50)
+
+    # Garbage: pre-2026-09 hash dir, a nested cache root, and entries whose
+    # model was retired.
+    (cache / "1234567890123456789").mkdir()
+    (cache / "1234567890123456789" / "model.mil").write_bytes(b"w" * 1000)
+    (cache / "coreml_cache" / "987654321").mkdir(parents=True)
+    (cache / "retired.onnx").mkdir()
+    (cache / "retired.onnx.nocache").write_text("1.28.0 27.0")
+    (cache / "retired.onnx.static.1.onnx").write_bytes(b"q" * 30)
+
+    freed = prune_compile_caches(str(models))
+
+    assert freed > 0
+    survivors = sorted(p.name for p in cache.iterdir())
+    assert survivors == ["live.onnx", "live.onnx.nocache", "live.onnx.static.1.onnx"]
+    assert (cache / "live.onnx" / "model.mil").exists()
+
+
+def test_prune_is_a_noop_on_a_clean_tree(tmp_path):
+    from roop.inference import prune_compile_caches
+
+    models = tmp_path / "models"
+    (models / "coreml_cache" / "live.onnx").mkdir(parents=True)
+    (models / "live.onnx").write_bytes(b"x")
+
+    assert prune_compile_caches(str(models)) == 0
+    assert (models / "coreml_cache" / "live.onnx").exists()
