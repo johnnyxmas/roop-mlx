@@ -11,6 +11,7 @@ import os
 import numpy as np
 
 from roop.typing import Face, Frame
+from roop.face_util import balance_source_embedding
 from roop.utilities import resolve_relative_path
 
 class FaceSwapInsightFace:
@@ -57,6 +58,13 @@ class FaceSwapInsightFace:
             source_face = source_face.faces[0]
 
         latent = source_face.normed_embedding.reshape((1, -1))
+        # Identity balancing happens on the ArcFace vector, before the emap
+        # projection — the same order FaceFusion uses.
+        latent = balance_source_embedding(
+            latent,
+            getattr(target_face, "embedding", None),
+            self.plugin_options.get("swapper_weight", 0.5),
+        )
         latent = np.dot(latent, self.emap)
         latent /= np.linalg.norm(latent) + 1e-6
         latent = np.ascontiguousarray(latent.astype(np.float32))

@@ -20,6 +20,35 @@ from roop.capturer import get_video_frame
 from roop.typing import Frame, Face
 
 
+def balance_source_embedding(source_embedding, target_embedding, weight: float):
+    """Blend the source identity toward, or away from, the target face.
+
+    Mirrors FaceFusion's ``face_swapper_weight`` (3.4.0): the 0..1 control maps
+    to +0.35..-0.35, so **0.5 is a no-op** (pure source), values below 0.5 pull
+    the identity toward the target face, and values above 0.5 extrapolate away
+    from it, sharpening the source identity.  The slider is therefore
+    "target-ward <-> source-ward", not a blend amount.
+
+    The target is L2-normalised before blending and the result deliberately is
+    NOT renormalised, matching upstream.  *source_embedding* is expected to be
+    unit-norm already (both swap processors pass ``normed_embedding``).
+
+    Returns the source unchanged at the neutral weight, or when the target
+    carries no embedding -- a face reused by the tracker across frames may have
+    ``embedding is None`` (see face_tracker.py), and a missing identity must not
+    take down a video mid-run.
+    """
+    if source_embedding is None or target_embedding is None:
+        return source_embedding
+    shift = float(np.interp(weight, [0.0, 1.0], [0.35, -0.35]))
+    if shift == 0.0:
+        return source_embedding
+    target = np.asarray(target_embedding, dtype=source_embedding.dtype)
+    target = target.reshape(source_embedding.shape)
+    target = target / (np.linalg.norm(target) + 1e-6)
+    return source_embedding * (1.0 - shift) + target * shift
+
+
 def get_first_face(frame: Frame) -> Any:
     try:
         from roop.face_detector import get_yolo_detector

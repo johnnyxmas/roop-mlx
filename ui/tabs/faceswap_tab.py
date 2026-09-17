@@ -513,6 +513,16 @@ def faceswap_tab():
                     label="Original/Enhanced image blend ratio",
                     info="Only used with active post-processing",
                 )
+                ui.globals.ui_swapper_weight = gr.Slider(
+                    0.0,
+                    1.0,
+                    value=0.5,
+                    step=0.05,
+                    label="Source identity weight",
+                    info="0.5 leaves the identity untouched; lower keeps more "
+                    "of the target's own face, higher pushes harder toward the "
+                    "source",
+                )
 
         with gr.Row(variant="panel"):
             with gr.Column(scale=1):
@@ -660,6 +670,11 @@ def faceswap_tab():
     )
 
     forced_fps.change(fn=on_fps_changed, inputs=[forced_fps], show_progress="hidden")
+    ui.globals.ui_swapper_weight.change(
+        fn=on_swapper_weight_changed,
+        inputs=[ui.globals.ui_swapper_weight],
+        show_progress="hidden",
+    )
     _conversion_buttons = [bt_conv_480, bt_conv_720, bt_conv_1080, bt_conv_2160, bt_conv_fps]
     bt_destfiles.change(
         fn=on_destfiles_changed,
@@ -1598,6 +1613,11 @@ def stop_swap():
         gr.Button(variant="secondary", interactive=False),
         _format_status_html({"active": False}),
     )
+
+
+def on_swapper_weight_changed(weight):
+    """Store the identity weight globally; ProcessOptions reads it from there."""
+    roop.globals.swapper_weight = float(weight)
 
 
 def on_fps_changed(fps):

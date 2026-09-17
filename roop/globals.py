@@ -23,6 +23,10 @@ max_memory = None
 execution_threads = None
 headless = None
 log_level = "error"
+# FaceFusion-style face_swapper_weight: 0.5 is neutral (pure source
+# identity), lower keeps more of the target face, higher pushes further
+# toward the source.  See face_util.balance_source_embedding.
+swapper_weight = 0.5
 selected_enhancer = None
 subsample_size = 128
 face_swap_mode = None

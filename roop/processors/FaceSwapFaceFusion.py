@@ -10,6 +10,7 @@ import os
 
 import numpy as np
 
+from roop.face_util import balance_source_embedding
 from roop.typing import Face, Frame
 from roop.utilities import resolve_relative_path
 
@@ -78,6 +79,11 @@ class FaceSwapFaceFusion:
             source_face = source_faceset
 
         source = source_face.normed_embedding.reshape(1, -1).astype(np.float32)
+        source = balance_source_embedding(
+            source,
+            getattr(target_face, "embedding", None),
+            self.plugin_options.get("swapper_weight", 0.5),
+        ).astype(np.float32)
 
         result = self._session.run(
             [self._output_name],

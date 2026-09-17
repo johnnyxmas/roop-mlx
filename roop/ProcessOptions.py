@@ -1,3 +1,5 @@
+import roop.globals
+
 SWAP_MODEL_OUTPUT_SIZES = {
     "InSwapper 128": 128,
     "ReSwapper 128": 128,
@@ -26,6 +28,7 @@ class ProcessOptions:
         show_face_area,
         restore_original_mouth,
         show_mask=False,
+        swapper_weight=None,
     ):
         if swap_model is not None:
             self.swap_modelname = swap_model
@@ -44,4 +47,9 @@ class ProcessOptions:
         self.show_face_masking = show_mask
         self.subsample_size = subsample_size
         self.restore_original_mouth = restore_original_mouth
+        # Read from globals when unset so every entry point (UI, batch,
+        # virtualcam, extras) picks the setting up without re-plumbing.
+        self.swapper_weight = (
+            roop.globals.swapper_weight if swapper_weight is None else swapper_weight
+        )
         self.max_num_reuse_frame = 15

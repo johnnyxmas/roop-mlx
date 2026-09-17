@@ -151,7 +151,10 @@ class ProcessMgr:
                 p = str_to_class(module, classname)
             if p is not None:
                 if p.type == "swap":
-                    extoption.update({"modelname": self._resolve_modelname(self.options.swap_modelname)})
+                    extoption.update({
+                        "modelname": self._resolve_modelname(self.options.swap_modelname),
+                        "swapper_weight": self.options.swapper_weight,
+                    })
                 p.Initialize(extoption)
                 newprocessors.append(p)
             else:
