@@ -121,12 +121,24 @@ def _conversion_button_states():
     return size_states + [gr.update(interactive=is_video)]
 
 
+# The trailing entry is the Stop-conversion button, enabled only while converting.
 def _lock_for_convert():
-    return [gr.update(interactive=False)] * (3 + len(_RES_TIERS) + 1)
+    return [gr.update(interactive=False)] * (3 + len(_RES_TIERS) + 1) + [gr.update(interactive=True)]
 
 
 def _unlock_after_convert():
-    return [gr.update(interactive=True)] * 3 + _conversion_button_states()
+    return (
+        [gr.update(interactive=True)] * 3
+        + _conversion_button_states()
+        + [gr.update(interactive=False)]
+    )
+
+
+def on_stop_convert():
+    import roop.util_ffmpeg as ffmpeg
+
+    if ffmpeg.cancel_scale_video():
+        gr.Info("Stopping re-encode...")
 
 
 def _on_convert_480(fps, progress=gr.Progress()):
@@ -201,6 +213,9 @@ def on_convert_target_resolution(resolution, fps=0, progress=gr.Progress()):
             src, out, height, fps_val,
             on_progress=lambda frac: progress(frac, desc=_desc),
         )
+        if ffmpeg.scale_video_cancelled():
+            gr.Info("Re-encode stopped — target unchanged.")
+            return noop
         if not ok or not os.path.exists(out):
             gr.Warning("Video re-encode failed — target unchanged.")
             return noop
@@ -388,6 +403,10 @@ def faceswap_tab():
                     )
                     bt_conv_fps = gr.Button(
                         "Change FPS (keep size)", variant="secondary", size="sm",
+                        interactive=False, scale=1,
+                    )
+                    bt_conv_stop = gr.Button(
+                        "⏹ Stop", variant="stop", size="sm",
                         interactive=False, scale=1,
                     )
                 with gr.Row(variant="panel"):
@@ -710,7 +729,9 @@ def faceswap_tab():
         fn=on_clear_destfiles, outputs=[target_faces, selected_face_detection, target_file_info]
     ).then(fn=_conversion_button_states, outputs=_conversion_buttons)
 
-    _convert_lockables = [bt_start, bt_srcfiles, bt_destfiles] + _conversion_buttons
+    _convert_lockables = [bt_start, bt_srcfiles, bt_destfiles] + _conversion_buttons + [bt_conv_stop]
+    # Unqueued so it runs while the conversion itself holds the queue.
+    bt_conv_stop.click(fn=on_stop_convert, queue=False)
     for _btn, _conv_fn in (
         (bt_conv_480, _on_convert_480),
         (bt_conv_720, _on_convert_720),
