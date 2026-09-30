@@ -22,6 +22,18 @@ def _fpath(f) -> str:
     return f.path if hasattr(f, "path") else str(f)
 
 
+def _selected_target_path(files) -> str:
+    """Path of the selected target as it will be processed.
+
+    A re-encode swaps the entry's file for the converted one while the Gradio
+    file list keeps the original upload; frame numbers only line up with the
+    converted file (a lower FPS has fewer frames).
+    """
+    if 0 <= selected_preview_index < len(list_files_process):
+        return list_files_process[selected_preview_index].filename
+    return _fpath(files[selected_preview_index])
+
+
 IS_INPUT = True
 SELECTED_FACE_INDEX = 0
 SELECTION_FACES_DATA = []
@@ -1076,7 +1088,7 @@ def on_use_face_from_selected(files, frame_num):
     SELECTED_FACE_INDEX = 0
     thumbs = []
 
-    roop.globals.target_path = _fpath(files[selected_preview_index])
+    roop.globals.target_path = _selected_target_path(files)
     if util.is_image(
         roop.globals.target_path
     ) and not roop.globals.target_path.lower().endswith(("gif")):
@@ -1205,7 +1217,7 @@ def on_preview_frame_changed(
     if files is None or selected_preview_index >= len(files) or frame_num is None:
         return None, None, gr.Slider(info=timeinfo)
 
-    filename = _fpath(files[selected_preview_index])
+    filename = _selected_target_path(files)
     if util.is_video(filename) or filename.lower().endswith("gif"):
         current_frame = get_video_frame(filename, frame_num)
         if current_video_fps == 0:
@@ -1330,7 +1342,7 @@ def on_preview_mask(swap_model, frame_num, files, clip_text, mask_engine):
     ):
         return None
 
-    filename = _fpath(files[selected_preview_index])
+    filename = _selected_target_path(files)
     if util.is_video(filename) or filename.lower().endswith("gif"):
         current_frame = get_video_frame(filename, frame_num)
     else:
@@ -1382,7 +1394,7 @@ def test_all_swappers(
     if files is None or len(files) < 1 or frame_num is None:
         return None
 
-    filename = _fpath(files[selected_preview_index])
+    filename = _selected_target_path(files)
     if util.is_video(filename) or filename.lower().endswith("gif"):
         current_frame = get_video_frame(filename, frame_num)
     else:
