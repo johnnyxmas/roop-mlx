@@ -1,3 +1,4 @@
+import math
 import os
 import time
 import cv2
@@ -260,8 +261,13 @@ class ProcessMgr:
             if update:
                 update()
 
-    def read_frames_thread(self, cap, frame_start, frame_end, num_threads):
+    def read_frames_thread(self, cap, frame_start, frame_end, num_threads, fps_ratio=1.0):
+        # fps_ratio = output fps / source fps. When != 1 the source is resampled
+        # by timestamp (frames dropped or repeated) so the output keeps the
+        # source duration; otherwise a lower output fps stretches the video and
+        # restore_audio's -shortest trims the tail off to the audio length.
         num_frame = 0
+        num_out = 0
         total_num = frame_end - frame_start
         if frame_start > 0:
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_start)
@@ -271,8 +277,14 @@ class ProcessMgr:
             if not ret:
                 break
 
-            self.frames_queue[num_frame % num_threads].put(frame, block=True)
             num_frame += 1
+            # Emit every output frame whose timestamp falls inside this source
+            # frame's interval (so output frame 0 is source frame 0).
+            emit = math.ceil(num_frame * fps_ratio - 1e-6) - num_out
+            for i in range(emit):
+                out = frame if i == 0 else frame.copy()
+                self.frames_queue[num_out % num_threads].put(out, block=True)
+                num_out += 1
             if num_frame == total_num:
                 break
 
@@ -351,6 +363,11 @@ class ProcessMgr:
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         frame_count = (frame_end - frame_start) + 1
+        source_fps = cap.get(cv2.CAP_PROP_FPS)
+        fps_ratio = 1.0
+        if fps and source_fps and source_fps > 0 and abs(fps - source_fps) > 0.01:
+            fps_ratio = fps / source_fps
+            frame_count = max(1, int(frame_count * fps_ratio))
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
@@ -391,7 +408,8 @@ class ProcessMgr:
             self.streamwriter = StreamWriter((width, height), int(fps))
 
         readthread = Thread(
-            target=self.read_frames_thread, args=(cap, frame_start, frame_end, threads)
+            target=self.read_frames_thread,
+            args=(cap, frame_start, frame_end, threads, fps_ratio),
         )
         readthread.start()
 

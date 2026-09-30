@@ -36,7 +36,15 @@ previewimage = None
 
 selected_preview_index = 0
 
-is_processing = False
+# Swap worker thread. "Running" is derived from its liveness rather than a
+# flag: the Stop button cancels start_swap mid-yield, so any reset placed after
+# the worker loop never executes.
+_swap_thread = None
+
+
+def _swap_running():
+    return _swap_thread is not None and _swap_thread.is_alive()
+
 
 list_files_process: list[ProcessEntry] = []
 model_swap_choices = [
@@ -148,8 +156,8 @@ def on_convert_target_resolution(resolution, fps=0, progress=gr.Progress()):
 
     noop = (gr.update(), gr.update(), gr.update())
     try:
-        if is_processing:
-            gr.Warning("Cannot re-encode while a swap is running.")
+        if _swap_running():
+            gr.Warning("Cannot re-encode while a swap is running (or still stopping).")
             return noop
         if not list_files_process or selected_preview_index >= len(list_files_process):
             gr.Warning("Load a target video first.")
@@ -1293,7 +1301,7 @@ def on_preview_mask(swap_model, frame_num, files, clip_text, mask_engine):
     from roop.core import live_swap, get_processing_plugins
 
     if (
-        is_processing
+        _swap_running()
         or files is None
         or selected_preview_index >= len(files)
         or clip_text is None
@@ -1493,7 +1501,7 @@ def start_swap(
     from ui.main import prepare_environment
     from roop.core import batch_process_regular
 
-    global is_processing
+    global _swap_thread
 
     idle_html = _format_status_html({"active": False})
 
@@ -1530,18 +1538,11 @@ def start_swap(
             yield gr.Button(variant="primary"), None, None, idle_html
             return
 
-    is_processing = True
     roop.globals.progress_status.update({
         "percent": 0, "fps": 0.0, "eta_seconds": 0,
         "current_frame": 0, "total_frames": 0,
         "start_time": time.time(), "active": True,
     })
-    yield (
-        gr.Button(variant="secondary", interactive=False),
-        gr.Button(variant="primary", interactive=True),
-        None,
-        _format_status_html(roop.globals.progress_status),
-    )
     roop.globals.execution_threads = roop.globals.CFG.max_threads
     roop.globals.video_encoder = roop.globals.CFG.output_video_codec
     roop.globals.video_quality = roop.globals.CFG.video_quality
@@ -1570,7 +1571,14 @@ def start_swap(
             worker_exc.append(e)
 
     t = threading.Thread(target=_worker, daemon=True)
+    _swap_thread = t
     t.start()
+    yield (
+        gr.Button(variant="secondary", interactive=False),
+        gr.Button(variant="primary", interactive=True),
+        None,
+        _format_status_html(roop.globals.progress_status),
+    )
 
     while t.is_alive():
         t.join(timeout=0.5)
@@ -1581,7 +1589,6 @@ def start_swap(
             _format_status_html(roop.globals.progress_status),
         )
 
-    is_processing = False
     roop.globals.progress_status["active"] = False
 
     if worker_exc:
