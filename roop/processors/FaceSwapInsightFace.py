@@ -14,6 +14,7 @@ from roop.typing import Face, Frame
 from roop.face_util import balance_source_embedding
 from roop.utilities import resolve_relative_path
 
+
 class FaceSwapInsightFace:
     plugin_options: dict = None
 

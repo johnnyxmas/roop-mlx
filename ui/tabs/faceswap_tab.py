@@ -81,6 +81,7 @@ def upscale_choices_for_model(swap_model):
     native = SWAP_MODEL_OUTPUT_SIZES.get(swap_model, 128)
     return [c for c in UPSCALE_CHOICES if int(c[:3]) >= native]
 
+
 no_face_choices = [
     "Use untouched original frame",
     "Retry rotated",
@@ -249,6 +250,7 @@ def on_convert_target_resolution(resolution, fps=0, progress=gr.Progress()):
     except Exception as e:
         gr.Warning(f"Re-encode error: {e}")
         return noop
+
 
 manual_masking = False
 
