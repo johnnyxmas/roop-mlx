@@ -41,10 +41,8 @@ Four threads sharing one session gave bit-identical outputs.
 ## Reproduce
 
 ```bash
-# converter env (isolated; coreai-onnx is third-party, reviewed before use)
-python3.13 -m venv .venv-coreai
-.venv-coreai/bin/pip install 'coreai-onnx[verify]==1.2.1' coreai-core==1.0.0b3
-.venv-coreai/bin/coreai-onnx convert ../roop-mlx/models/hyperswap_1a_256.onnx \
+# converter (now in requirements.txt; coreai-onnx is third-party, reviewed)
+venv/bin/python -m coreai_onnx._cli convert models/hyperswap_1a_256.onnx \
     -o coreai_spike/out/hyperswap_1a_256.aimodel --compute-unit ane
 
 # build (Xcode 27 SDK; CommandLineTools lacks CoreAI)
@@ -58,7 +56,14 @@ xcrun --sdk macosx swiftc -O -parse-as-library -target arm64-apple-macos27.0 \
 ../roop-mlx/venv/bin/python coreai_spike/e2e.py
 ```
 
-## Open questions before integrating
+## Integrated
+
+Shipped as `roop/coreai/` + `_COREAI_MODELS` in `roop/inference.py` (see
+there for the final routing, including HyperSwap 1B/1C and GPEN 1024/2048).
+Concurrent runs on one session corrupted GPEN-2048 output ~1 in 40, so the
+shipped session serialises runs. AlphaFace and ReSwapper 256 measured slower.
+
+## Open questions (resolved)
 
 - Shipping: users need the Xcode 27 SDK to build the dylib (CommandLineTools
   has no CoreAI), or we ship a prebuilt one.

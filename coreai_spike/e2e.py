@@ -21,6 +21,8 @@ from roop.inference import create_session  # noqa: E402
 M = "/Users/j0hnnyxm4s/Documents/GitHub/roop-mlx/models"
 MODELS = [("hyperswap_1a_256", (-1, 1)), ("GFPGANv1.4", (-1, 1)),
           ("GPEN-BFR-512", (-1, 1)), ("inswapper_128", (0, 1))]
+if len(sys.argv) > 1:  # name:lo,hi ...
+    MODELS = [(a.split(":")[0], tuple(float(v) for v in a.split(":")[1].split(","))) for a in sys.argv[1:]]
 RUNS = 25
 
 ort.set_default_logger_severity(3)
