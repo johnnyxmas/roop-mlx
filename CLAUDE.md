@@ -16,19 +16,22 @@ there.**
 ## Commands
 
 ```bash
-source venv/bin/activate
-python run.py                    # launch the Gradio UI (http://localhost:7860)
-python run.py --server_share     # expose via public Gradio share URL
+uv sync                              # create/update .venv from uv.lock (incl. dev group)
+uv run python run.py                 # launch the Gradio UI (http://localhost:7860)
+uv run python run.py --server_share  # expose via public Gradio share URL
 
-pip install -r requirements-dev.txt
-pytest                           # full suite (model parity, compositing math, color pipeline)
-pytest tests/test_swap_parity.py -k some_test   # single test
-flake8                           # E3/E4/F only, see .flake8 (excludes venv, clip)
+uv run pytest                        # full suite (model parity, compositing math, color pipeline)
+uv run pytest tests/test_swap_parity.py -k some_test   # single test
+uv run flake8                        # E3/E4/F only, see .flake8 (excludes venv, clip)
 ```
 
-Python 3.11–3.13 (`.python-version` pins 3.13.7; 3.14 works but is unverified on the face-swap path —
-see memory). `pip install -r requirements.txt` pulls arm64 `mlx` and `onnxruntime` wheels; no
-provider flags or manual wheel building needed. `ffmpeg` must be on PATH.
+Dependencies live in `pyproject.toml` (with the rationale for each pin) and are locked in `uv.lock`;
+`uv add` / `uv lock --upgrade-package X` change them. `requirements.txt` and `requirements-dev.txt`
+are **generated** for plain-pip users — regenerate after any lock change with
+`uv export --no-hashes --no-dev --no-emit-project -o requirements.txt` (and
+`--only-group dev ... -o requirements-dev.txt`); don't edit them by hand. Python 3.11–3.14
+(`.python-version` says 3.13; 3.14 works but is unverified on the face-swap path — see memory).
+`ffmpeg` must be on PATH.
 
 Models (~2 GB) auto-download to `models/` on first run via `roop/model_manager.py`; CoreML models
 compile and cache to `models/*/coreml_cache/` on first use.

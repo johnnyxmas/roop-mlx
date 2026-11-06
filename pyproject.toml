@@ -1,0 +1,84 @@
+[project]
+name = "roop-mlx"
+version = "4.5.0"
+description = "Face swap for images and video, tuned for Apple Silicon (Core AI + CoreML + MLX)"
+readme = "README.md"
+license = "AGPL-3.0-only"
+# coreai-core ships wheels for cp311-cp314 only.
+requires-python = ">=3.11,<3.15"
+# Apple Silicon only; every dependency carries the same platform marker so the
+# exported requirements.txt stays correct for plain pip.
+dependencies = [
+    # -- MLX --
+    "mlx>=0.20.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+
+    # -- onnxruntime for the CoreML execution provider: 2-4x faster than the
+    # MLX interpreter for the detector stack and large enhancers (see
+    # roop/inference.py for the per-model backend split).
+    # 1.28 is the floor: 1.27 ships no cp314 wheel, so an older bound silently
+    # blocks python 3.14.  CoreML EP and swap parity verified on 1.28 and on
+    # 1.30 (2026-09-16, full suite green on both).  1.30 brings nothing Apple-
+    # specific -- its changes are CUDA/WebGPU/Arm64-CPU kernels -- and it does
+    # NOT fix RestoreFormer++'s unloadable compile cache, which inference.py
+    # handles with a version-stamped .nocache marker.
+    "onnxruntime>=1.28,<2.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+
+    # -- Apple Core AI backend (macOS 27+), see roop/coreai and inference.py.
+    # coreai-core is Apple's; coreai-onnx (third-party, BSD-3, source reviewed
+    # 2026-11-05) converts each ONNX model to .aimodel on first use.  Pinned
+    # exactly: both are beta.  Wheels need macOS 26+ (Darwin 25+); on older
+    # systems they are skipped and the app keeps its CoreML/MLX routing.
+    "coreai-core==1.0.0b3; sys_platform == 'darwin' and platform_machine == 'arm64' and platform_release >= '25'",
+    "coreai-onnx==1.2.1; sys_platform == 'darwin' and platform_machine == 'arm64' and platform_release >= '25'",
+
+    # -- core numerics / image / video --
+    # opencv 5 (2026-07): verified against every cv2 symbol this repo calls (59
+    # of them, incl. dnn.NMSBoxes/blobFromImage, calcOpticalFlowPyrLK and the
+    # photo filters) plus a real end-to-end swap -- output differs from 4.12
+    # only by interpolation rounding in the blended face region (max 39/765,
+    # p50 1).  5.x also drops opencv's numpy<2.3 ceiling, which is why numpy is
+    # unbounded again here.
+    "numpy>=2.0,<3.0",
+    "opencv-python-headless>=5.0,<6.0",
+    "scipy>=1.11,<2.0",
+    "scikit-image>=0.21,<1.0",
+    "pillow>=12.2.0",
+
+    # -- ONNX: read-only loader so the MLX interpreter can pull weights out of
+    # the .onnx files, plus coreai-onnx's converter input.
+    "onnx==1.22.0",
+
+    # -- UI --
+    # Both bounds below are gradio's own, not tighter guesses: gradio 6.x asks
+    # for pydantic>=2.0,<=3.0 and markupsafe>=2.0,<4.0.  The previous
+    # pydantic==2.10.6 pin was what kept this project off python 3.14 --
+    # 2.10.6 ships no cp314 wheel, while 2.11+ does.
+    "gradio>=6.7.0,<7.0",
+    "pydantic>=2.11,<3.0",
+    "markupsafe>=2.0,<4.0",
+
+    # -- misc --
+    "pyyaml>=6.0,<7.0",
+    "requests>=2.31,<3.0",
+    "tqdm>=4.67,<5.0",
+    "ftfy>=6.0,<7.0",
+    # regex uses CalVer (2026.7.19), so an upper bound has to be a future
+    # *year* or it silently freezes the package -- <2026.0.0 stopped all
+    # updates in January 2026.
+    "regex>=2024.0.0,<2027.0.0",
+    "pyvirtualcam>=0.12,<1.0",
+    "psutil>=5.9,<8.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3,<10.0",
+    "flake8>=7.0,<8.0",
+]
+
+[tool.uv]
+# An application run from the checkout (python run.py), not an installable
+# package: uv manages the environment only.
+package = false
+# Resolve for Apple Silicon macOS only; there is no other supported target.
+environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]

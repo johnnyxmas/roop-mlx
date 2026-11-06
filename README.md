@@ -53,29 +53,33 @@ This software is provided for authorized research, academic study, and lawful us
 ### Prerequisites
 
 - **Apple Silicon Mac** (M1 / M2 / M3 / M4) running macOS 13.5 or newer
-- **Python 3.11 – 3.13** — [python.org](https://www.python.org/downloads/) or Homebrew
-  (3.14 is not yet supported by the pinned UI dependencies)
+- **[uv](https://docs.astral.sh/uv/)** — `brew install uv`. It installs the
+  right Python (3.13, from `.python-version`) itself; 3.11 – 3.14 are supported
 - **ffmpeg** on your system PATH — `brew install ffmpeg` is the easy path
-- A virtual environment is strongly recommended
 
 ### Setup
 
 ```bash
-python3 -m venv venv && source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+uv sync
 ```
 
-No provider flags, no CUDA wheels, no TensorRT to build. The `mlx` and
+This creates `.venv/` with the exact dependency versions in `uv.lock`. No
+provider flags, no CUDA wheels, no TensorRT to build. The `mlx` and
 `onnxruntime` arm64 wheels install automatically.
+
+Without uv, the same pinned versions install with plain pip:
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
 
 ---
 
 ## Usage
 
 ```bash
-source venv/bin/activate
-python run.py
+uv run python run.py
 ```
 
 **CLI flags:**
@@ -158,8 +162,7 @@ ONNX-to-MLX interpreter.
 Run the test suite (model parity, compositing math, color pipeline) with:
 
 ```bash
-pip install -r requirements-dev.txt
-pytest
+uv run pytest
 ```
 
 ---
