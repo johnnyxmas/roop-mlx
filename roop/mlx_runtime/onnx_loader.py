@@ -1041,6 +1041,12 @@ class OnnxMLXSession:
             dtype = mx.float32
         values[node.output[0]] = mx.full(shape, fill_val, dtype=dtype)
 
+    def _op_range(self, node, values):
+        start = float(self._v(values, node.input[0]))
+        limit = float(self._v(values, node.input[1]))
+        delta = float(self._v(values, node.input[2]))
+        values[node.output[0]] = mx.arange(start, limit, delta, dtype=mx.float32)
+
     def _op_tile(self, node, values):
         x       = self._v(values, node.input[0])
         repeats = [int(r) for r in np.array(self._v(values, node.input[1]))]
