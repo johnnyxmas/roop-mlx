@@ -69,6 +69,11 @@ def test_gfpgan_interpreter_parity():
     PSNR rather than a loosened max keeps the guard meaningful: the drift
     that forced CodeFormer (1.37) and RestoreFormer++ (3.58) onto CoreML
     would fail this by a mile.
+
+    2026-11-05: nearly all of that drift was MLX's winograd conv running
+    fp32 at TF32 precision on M5.  With it disabled (onnx_loader.py sets
+    MLX_CONV_WINOGRAD=0) this feed measures 122 dB, max 8e-5, so the bounds
+    below are tight enough to catch winograd being switched back on.
     """
     path = model_path("GFPGANv1.4.onnx")
     feed = make_feed(path)
@@ -78,5 +83,5 @@ def test_gfpgan_interpreter_parity():
     to8 = lambda a: np.clip((a + 1) * 127.5, 0, 255)  # noqa: E731
     psnr = 10 * np.log10(255 ** 2 / ((to8(ref) - to8(out)) ** 2).mean())
 
-    assert psnr > 55, f"GFPGAN interpreter parity regressed: {psnr:.1f} dB"
-    assert np.abs(ref - out).max() < 0.1
+    assert psnr > 100, f"GFPGAN interpreter parity regressed: {psnr:.1f} dB"
+    assert np.abs(ref - out).max() < 1e-3
