@@ -38,8 +38,9 @@ class Enhance_GPEN:
         model_path = resolve_relative_path(f"../models/{model_name}")
         self._resolution = resolution
 
-        from roop.mlx_runtime.onnx_loader import OnnxMLXSession
-        self._session = OnnxMLXSession(model_path)
+        # Routed like every other model (Core AI, else the MLX interpreter).
+        from roop.inference import create_session
+        self._session = create_session(model_path)
 
     def Run(self, source_faceset: FaceSet, target_face: Face,
             temp_frame: Frame):

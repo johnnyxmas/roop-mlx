@@ -36,13 +36,22 @@ compile and cache to `models/*/coreml_cache/` on first use.
 ## Architecture
 
 **Backend selection is the core design decision** (`roop/inference.py`): each ONNX model is
-individually routed to onnxruntime+CoreML or the in-repo `OnnxMLXSession` interpreter
-(`roop/mlx_runtime/onnx_loader.py`), based on benchmarked speed and numerical parity against the
-ONNX reference — not a blanket "backend X for everything" choice. `_COREML_MODELS` lists which
-models get CoreML; the routing rationale (and which models CoreML fails to compile, or partitions
-poorly) is documented inline there — read it before changing which backend a model uses.
-`create_session()` is the single entry point processors call to get a session; it falls back to the
-MLX interpreter if onnxruntime is unavailable.
+individually routed to Apple Core AI, onnxruntime+CoreML, or the in-repo `OnnxMLXSession`
+interpreter (`roop/mlx_runtime/onnx_loader.py`), based on benchmarked speed and numerical parity
+against the ONNX reference — not a blanket "backend X for everything" choice. `_COREAI_MODELS`
+(tried first, macOS 27+) and `_COREML_MODELS` list the routing; the rationale (and which models a
+backend fails to compile, or partitions poorly) is documented inline there — read it before
+changing which backend a model uses. `create_session()` is the single entry point processors call
+to get a session; every backend failure falls through to the next one, ending at the MLX
+interpreter.
+
+Core AI (`roop/coreai/`) is reached through a Swift C-ABI bridge, `libcoreai_bridge.dylib`, which is
+committed prebuilt; rebuild it with `roop/coreai/build.sh`, which needs the Xcode 27 SDK (the
+CommandLineTools SDK has no CoreAI module; the script sets `DEVELOPER_DIR` per build, no
+`xcode-select`). Models convert to `.aimodel` on first use via coreai-onnx in a child process,
+cached in `models/**/coreai_cache/`. Traps: preferring the CPU compute unit returns wrong output
+(never pass unit 1), and concurrent runs on one session corrupted output intermittently, so
+`CoreAISession.run` holds a per-session lock. `ROOP_DISABLE_COREAI=1` disables the backend.
 
 A related trap: CoreML's MLProgram runtime rejects unbounded/dynamic ONNX input dims (raises
 "unbounded dimension" and silently falls back to CPU, forfeiting acceleration).

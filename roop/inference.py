@@ -1,8 +1,9 @@
 """Per-model inference backend selection for Apple Silicon.
 
-Two backends expose the same session API surface (get_inputs /
+Three backends expose the same session API surface (get_inputs /
 get_outputs / run):
 
+- Apple Core AI (macOS 27+), via roop/coreai -- see _COREAI_MODELS
 - onnxruntime with the CoreML execution provider (GPU/ANE via MLProgram)
 - OnnxMLXSession, the in-repo ONNX-to-MLX graph interpreter
 
@@ -15,6 +16,33 @@ drifts from.  The interpreter stays faster for GPEN, XSeg and — since the
 """
 
 import os
+import threading
+
+# Core AI first, where it measured faster (2026-11-05, M5 Pro, macOS 27.0,
+# coreai-onnx 1.2.1; from Python through the bridge, all copies included,
+# alternating runs against the current backend -- coreai_spike/ on the
+# spike/core-ai branch has the harness):
+#   hyperswap_1a_256  CoreML EP 22.8 ms -> 17.2 ms (1.33x), 80.3 vs 81.1 dB
+#   hyperswap_1b_256  CoreML EP 22.7 ms -> 17.2 ms (1.32x), 79.5 dB
+#   hyperswap_1c_256  CoreML EP 22.8 ms -> 17.0 ms (1.34x), 75.3 dB
+#   GFPGANv1.4        MLX 144 ms        -> 78 ms   (1.84x), 129.5 dB
+#   GPEN-BFR-512      MLX 141 ms        -> 106 ms  (1.33x), 123.3 dB
+#   GPEN-BFR-1024     MLX 266 ms        -> 172 ms  (1.55x), 131.4 dB
+#   GPEN-BFR-2048     MLX 547 ms        -> 324 ms  (1.69x), 132.2 dB
+# Slower there, so not listed: inswapper_128 (35.4 vs 32.9 ms), yoloface_8n
+# (3.8 vs 2.7 ms), alphaface_256 (140.5 vs 132.5 ms), reswapper_256 (136.8
+# vs 126.6 ms).  Anything that fails -- macOS < 27, conversion, load, the
+# zero-input check -- falls through to the routing below.  Converted bundles
+# live in models/**/coreai_cache/.
+_COREAI_MODELS = {
+    "hyperswap_1a_256.onnx",
+    "hyperswap_1b_256.onnx",
+    "hyperswap_1c_256.onnx",
+    "GFPGANv1.4.onnx",
+    "GPEN-BFR-512.onnx",
+    "GPEN-BFR-1024.onnx",
+    "GPEN-BFR-2048.onnx",
+}
 
 _COREML_MODELS = {
     "yoloface_8n.onnx",
@@ -424,8 +452,6 @@ def prewarm_sessions_async():
     discarded; the win is CoreML's on-disk compiled-model cache (keyed by
     model path), so the first real swap doesn't stall on compilation.
     """
-    import threading
-
     from roop.utilities import resolve_relative_path
 
     def _warm():
@@ -443,8 +469,44 @@ def prewarm_sessions_async():
                     _create_coreml_session(path)
             except Exception:
                 return
+        # The default swapper's first Core AI use converts it (~10 s); do
+        # that here instead of stalling the first preview.
+        try:
+            path = resolve_relative_path("../models/hyperswap_1a_256.onnx")
+            if os.path.exists(path):
+                try_coreai_session(path)
+        except Exception:
+            pass
 
     threading.Thread(target=_warm, daemon=True, name="coreml-prewarm").start()
+
+
+# Serialises Core AI conversion + load: the prewarm thread and the UI must not
+# convert the same model into the same cache path at once.
+_COREAI_CREATE_LOCK = threading.Lock()
+
+
+def try_coreai_session(model_path: str):
+    """Return a validated Core AI session, or None to fall back."""
+    from roop.coreai import session as coreai
+
+    if not coreai.available():
+        return None
+    name = os.path.basename(model_path)
+    with _COREAI_CREATE_LOCK:
+        try:
+            sess = coreai.CoreAISession(model_path)
+        except Exception as e:
+            print(f"Core AI session failed for {name} ({e})")
+            return None
+        if not _validate_session(sess):
+            # A bundle that loads but cannot run is worthless; drop it so the
+            # next launch reconverts instead of failing the same way.
+            print(f"Core AI session for {name} failed validation; discarding it")
+            import shutil
+            shutil.rmtree(coreai.aimodel_path(model_path), ignore_errors=True)
+            return None
+        return sess
 
 
 def try_coreml_session(model_path: str):
@@ -459,6 +521,10 @@ def try_coreml_session(model_path: str):
 def create_session(model_path: str):
     """Return the fastest verified inference session for *model_path*."""
     name = os.path.basename(model_path)
+    if name in _COREAI_MODELS:
+        sess = try_coreai_session(model_path)
+        if sess is not None:
+            return sess
     if name in _COREML_MODELS:
         sess = try_coreml_session(model_path)
         if sess is not None:

@@ -9,6 +9,14 @@ def _backend_name(session) -> str:
     return type(session).__name__
 
 
+def _coreai_or(name: str, fallback: str) -> str:
+    """Expected backend for a Core AI-routed model: CoreAISession where Core
+    AI is usable (macOS 27+), else the backend it falls back to."""
+    from roop.coreai import session
+    from roop.inference import _COREAI_MODELS
+    return "CoreAISession" if name in _COREAI_MODELS and session.available() else fallback
+
+
 @pytest.mark.parametrize("parts,expected", [
     (("yoloface_8n.onnx",),              "InferenceSession"),
     (("buffalo_l", "w600k_r50.onnx"),    "InferenceSession"),
@@ -29,7 +37,7 @@ def test_create_session_backend(parts, expected):
     from roop.inference import create_session
 
     sess = create_session(path)
-    assert _backend_name(sess) == expected
+    assert _backend_name(sess) == _coreai_or(parts[-1], expected)
 
 
 @pytest.mark.parametrize("parts", [
@@ -127,7 +135,7 @@ def test_hyperswap_processor_session():
     p = FaceSwapFaceFusion()
     p.Initialize({"modelname": "HyperSwap 1B"})
     try:
-        assert _backend_name(p._session) in ("InferenceSession", "OnnxMLXSession")
+        assert _backend_name(p._session) in ("CoreAISession", "InferenceSession", "OnnxMLXSession")
         assert p.swap_type == "hyperswap"
     finally:
         p.Release()

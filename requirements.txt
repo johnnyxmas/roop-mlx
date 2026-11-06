@@ -16,6 +16,14 @@ mlx>=0.20.0; sys_platform == "darwin" and platform_machine == "arm64"
 # handles with a version-stamped .nocache marker.
 onnxruntime>=1.28,<2.0; sys_platform == "darwin" and platform_machine == "arm64"
 
+# -- Apple Core AI backend (macOS 27+), see roop/coreai and inference.py.
+# coreai-core is Apple's; coreai-onnx (third-party, BSD-3, source reviewed
+# 2026-11-05) converts each ONNX model to .aimodel on first use.  Pinned
+# exactly: both are beta.  Wheels need macOS 26+ (Darwin 25+); on older
+# systems they are skipped and the app keeps its CoreML/MLX routing.
+coreai-core==1.0.0b3; sys_platform == "darwin" and platform_machine == "arm64" and platform_release >= "25"
+coreai-onnx==1.2.1; sys_platform == "darwin" and platform_machine == "arm64" and platform_release >= "25"
+
 # -- core numerics / image / video --
 # opencv 5 (2026-07): verified against every cv2 symbol this repo calls (59 of
 # them, incl. dnn.NMSBoxes/blobFromImage, calcOpticalFlowPyrLK and the photo
