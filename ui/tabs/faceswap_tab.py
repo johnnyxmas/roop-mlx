@@ -919,7 +919,8 @@ def on_mask_blur_changed(mask_offset):
 
 def set_mask_offset(index, mask_offset):
     if len(roop.globals.INPUT_FACESETS) > SELECTED_INPUT_FACE_INDEX:
-        offs = (
+        # Faces store their offsets as a tuple; edit a copy and store it back.
+        offs = list(
             roop.globals.INPUT_FACESETS[SELECTED_INPUT_FACE_INDEX].faces[0].mask_offsets
         )
         offs[index] = mask_offset
@@ -931,7 +932,7 @@ def set_mask_offset(index, mask_offset):
             offs[3] = 0.0
         roop.globals.INPUT_FACESETS[SELECTED_INPUT_FACE_INDEX].faces[
             0
-        ].mask_offsets = offs
+        ].mask_offsets = tuple(offs)
 
 
 def on_swap_model_changed(swap_model, current_upscale):
