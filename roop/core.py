@@ -155,7 +155,8 @@ def batch_process_regular(
 
     if process_mgr is None:
         process_mgr = ProcessMgr(progress)
-    mask = imagemask["layers"][0] if imagemask is not None else None
+    layers = (imagemask or {}).get("layers") or []
+    mask = layers[0] if layers else None
     if len(roop.globals.INPUT_FACESETS) <= selected_index:
         selected_index = 0
     options = ProcessOptions(

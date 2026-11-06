@@ -32,9 +32,13 @@ class FaceCompat:
         "embedding", "normed_embedding",
         "sex", "age",
         "matrix", "mask_offsets",
+        "rotation",
     )
 
     def __init__(self):
+        # In-plane rotation (degrees, for face_util.transform) that makes this
+        # face upright: 0 normally, +/-90 when it was found on a rotated frame.
+        self.rotation = 0
         self.bbox = None
         self.kps = None
         self.det_score = 0.0
@@ -64,6 +68,23 @@ class YOLOFaceDetector:
     INPUT_SIZE = (640, 640)
     CONF_THRESHOLD = 0.5
     IOU_THRESHOLD = 0.4
+    # YOLOv8n-Face is trained on upright faces.  Measured 2026-11-05 on a
+    # 1080p frame: a 322px face is lost entirely beyond ~45-60 deg of roll,
+    # and a large face found at 90 deg has landmarks off by ~0.3 inter-eye
+    # distances with 10x the frame-to-frame jitter -- the "jerky horizontal
+    # face" symptom.  Past this roll (or when nothing is found) detection is
+    # retried on the frame rotated 90 deg each way; cv2.rotate is a lossless
+    # pixel permutation, so the only cost is the extra detector passes
+    # (~3 ms each), and only on frames that need them.
+    ROLL_RETRY_DEG = 45.0
+    # Clean upright faces score ~0.85; below this the upright pass may have
+    # misread an off-axis face, so the rotated passes run as well.
+    RETRY_BELOW_SCORE = 0.7
+    # (cv2 rotate code, face_util.transform rotation that uprights the face)
+    _RETRY_ROTATIONS = (
+        (cv2.ROTATE_90_CLOCKWISE, 90),
+        (cv2.ROTATE_90_COUNTERCLOCKWISE, -90),
+    )
 
     def __init__(self):
         self._session = None
@@ -221,13 +242,15 @@ class YOLOFaceDetector:
         list[FaceCompat] sorted left-to-right, or None when no faces found.
         """
         self._ensure_loaded()
-        h, w = frame.shape[:2]
-        blob, scale, pad_w, pad_h = self._preprocess(frame)
-
-        outs = self._session.run(
-            self._output_names, {self._input_name: blob}
-        )
-        faces = self._postprocess(outs, scale, pad_w, pad_h, h, w)
+        # (face, residual roll as seen by the detector in its own orientation)
+        found = self._detect_oriented(frame, None, 0)
+        if self._needs_retry(found):
+            for code, rotation in self._RETRY_ROTATIONS:
+                self._merge(found, self._detect_oriented(frame, code, rotation))
+            # Still nothing seen near upright: the face may be upside down.
+            if not found or any(r > self.ROLL_RETRY_DEG for _, r in found):
+                self._merge(found, self._detect_oriented(frame, cv2.ROTATE_180, 180))
+        faces = [f for f, _ in found]
         if not faces:
             return None
 
@@ -240,6 +263,92 @@ class YOLOFaceDetector:
 
         faces.sort(key=lambda f: f.bbox[0])
         return faces
+
+    def _detect_oriented(self, frame: np.ndarray, code, rotation: int) -> list:
+        """One detector pass on *frame* rotated by cv2 *code* (None = as is).
+
+        Returns ``(face, roll)`` pairs with bbox/kps mapped back to *frame*
+        coordinates; ``roll`` is measured in the rotated image, i.e. how far
+        from upright the detector actually saw the face.
+        """
+        img = frame if code is None else cv2.rotate(frame, code)
+        ih, iw = img.shape[:2]
+        blob, scale, pad_w, pad_h = self._preprocess(img)
+        outs = self._session.run(self._output_names, {self._input_name: blob})
+        faces = self._postprocess(outs, scale, pad_w, pad_h, ih, iw)
+        rolls = [self._roll(f) for f in faces]
+        if code is None:
+            return list(zip(faces, rolls))
+
+        h, w = frame.shape[:2]
+
+        def back(pts):
+            u, v = pts[:, 0], pts[:, 1]
+            if code == cv2.ROTATE_90_CLOCKWISE:      # (x, y) -> (h-1-y, x)
+                return np.stack([v, h - 1 - u], axis=1)
+            if code == cv2.ROTATE_180:               # (x, y) -> (w-1-x, h-1-y)
+                return np.stack([w - 1 - u, h - 1 - v], axis=1)
+            return np.stack([w - 1 - v, u], axis=1)  # (x, y) -> (y, w-1-x)
+
+        for f in faces:
+            x1, y1, x2, y2 = f.bbox
+            corners = back(np.array([[x1, y1], [x2, y2]], dtype=np.float32))
+            f.bbox = np.concatenate(
+                [corners.min(axis=0), corners.max(axis=0)]
+            ).astype(np.float32)
+            if f.kps is not None:
+                f.kps = back(f.kps).astype(np.float32)
+            f.rotation = rotation
+        return list(zip(faces, rolls))
+
+    def _needs_retry(self, found: list) -> bool:
+        """Should the rotated passes run?  When nothing was found, a face looks
+        rolled past ROLL_RETRY_DEG, or confidence is low -- far off-axis the
+        upright pass can misread the roll itself (a face at 120 deg read as
+        41 deg, score 0.62), and the low score is then the only tell."""
+        return (not found
+                or any(r > self.ROLL_RETRY_DEG for _, r in found)
+                or any(f.det_score < self.RETRY_BELOW_SCORE for f, _ in found))
+
+    def _merge(self, found: list, candidates: list) -> None:
+        """Fold rotated-pass candidates into *found* (in place), keeping the
+        better reading of each face and adding faces seen only rotated."""
+        for g, g_roll in candidates:
+            j = next((i for i, (f, _) in enumerate(found)
+                      if self._iou(f.bbox, g.bbox) > 0.3), None)
+            if j is None:
+                found.append((g, g_roll))
+            elif self._better(g, g_roll, *found[j]):
+                found[j] = (g, g_roll)
+
+    @staticmethod
+    def _better(a, a_roll: float, b, b_roll: float) -> bool:
+        """Is candidate *a* a better reading of the same face than *b*?
+
+        The detector is most accurate on upright faces, so the orientation
+        that saw the face closest to upright wins.  Confidence alone is a poor
+        guide off-axis: at 120 deg of roll the wrong orientation can score
+        higher yet land landmarks 0.25 inter-eye distances off.
+        """
+        if abs(a_roll - b_roll) > 15.0:
+            return a_roll < b_roll
+        return a.det_score > b.det_score
+
+    @staticmethod
+    def _roll(face) -> float:
+        """Absolute in-plane roll in degrees from the eye line (0 = upright)."""
+        if face.kps is None:
+            return 0.0
+        dx, dy = face.kps[1] - face.kps[0]
+        return abs(float(np.degrees(np.arctan2(dy, dx))))
+
+    @staticmethod
+    def _iou(a, b) -> float:
+        ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+        iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+        inter = ix * iy
+        union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+        return inter / union if union > 0 else 0.0
 
     # -- sub-model helpers -------------------------------------------------
 
@@ -289,7 +398,8 @@ class YOLOFaceDetector:
             center = ((x1 + x2) / 2, (y1 + y2) / 2)
             _scale = input_size / (max(w, h) * 1.5)
 
-            aimg, M = face_transform(frame, center, input_size, _scale, 0)
+            aimg, M = face_transform(frame, center, input_size, _scale,
+                                     getattr(face, "rotation", 0))
             blob = cv2.dnn.blobFromImage(
                 aimg, 1.0, (input_size, input_size),
                 (0.0, 0.0, 0.0), swapRB=True,
@@ -297,7 +407,12 @@ class YOLOFaceDetector:
             pred = self._landmark_2d106_session.run(
                 [out_name], {inp_name: blob}
             )[0][0]
-            pred = pred.reshape(-1, 2)
+            # 2d106det outputs [-1, 1] crop coordinates; scale to the 192px
+            # crop before mapping back (insightface's Landmark.get does the
+            # same).  Without this every point collapsed into a ~3px blob near
+            # the crop's top-left corner -- off the face, often off-frame --
+            # which broke autorotate's direction choice and mouth restore.
+            pred = (pred.reshape(-1, 2) + 1) * (input_size // 2)
             IM = cv2.invertAffineTransform(M)
             pred = trans_points(pred, IM)
             face.landmark_2d_106 = pred.astype(np.float32)
@@ -322,7 +437,8 @@ class YOLOFaceDetector:
             center = ((x1 + x2) / 2, (y1 + y2) / 2)
             _scale = input_size / (max(w, h) * 1.5)
 
-            aimg, _M = face_transform(frame, center, input_size, _scale, 0)
+            aimg, _M = face_transform(frame, center, input_size, _scale,
+                                      getattr(face, "rotation", 0))
             blob = cv2.dnn.blobFromImage(
                 aimg, 1.0, (input_size, input_size),
                 (0.0, 0.0, 0.0), swapRB=True,

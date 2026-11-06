@@ -256,7 +256,10 @@ def get_local_files_from_folder(folder: str) -> List[str]:
     files = [
         os.path.join(folder, f)
         for f in os.listdir(folder)
-        if os.path.isfile(os.path.join(folder, f))
+        # Hidden files (.DS_Store and friends) are never media, and Gradio
+        # refuses to serve a dotfile under the working directory, which fails
+        # the whole batch with InvalidPathError.
+        if not f.startswith(".") and os.path.isfile(os.path.join(folder, f))
     ]
     return files
 

@@ -169,6 +169,27 @@ def _parse_ffmpeg_time(value: str):
         return None
 
 
+# Running re-encode, so the UI can cancel it from another request.
+_scale_proc = None
+_scale_cancelled = False
+
+
+def cancel_scale_video() -> bool:
+    """Terminate a running scale_video() ffmpeg. Returns True if one was running."""
+    global _scale_cancelled
+    proc = _scale_proc
+    if proc is None or proc.poll() is not None:
+        return False
+    _scale_cancelled = True
+    proc.terminate()
+    return True
+
+
+def scale_video_cancelled() -> bool:
+    """True if the most recent scale_video() was stopped by cancel_scale_video()."""
+    return _scale_cancelled
+
+
 def scale_video(
     input_path: str,
     output_path: str,
@@ -181,8 +202,11 @@ def scale_video(
 
     Uses h264_videotoolbox when available (Apple Silicon hardware encoder),
     falling back to libx264 via resolve_codec("auto"). Audio is re-encoded to
-    AAC. Calls on_progress(0.0-1.0) if provided. Returns True on success.
+    AAC. Calls on_progress(0.0-1.0) if provided. Returns True on success;
+    False on failure or cancellation (partial output is removed on cancel).
     """
+    global _scale_proc, _scale_cancelled
+    _scale_cancelled = False
     codec = resolve_codec("auto")
     quality = roop.globals.video_quality if roop.globals.video_quality else 18
     duration = _probe_duration_seconds(input_path)
@@ -210,6 +234,7 @@ def scale_video(
         print(" ".join(cmd))
         return False
 
+    _scale_proc = proc
     try:
         for line in proc.stdout:
             line = line.strip()
@@ -221,6 +246,13 @@ def scale_video(
                 on_progress(1.0)
     finally:
         proc.wait()
+        _scale_proc = None
+
+    if _scale_cancelled:
+        print("ffmpeg re-encode cancelled")
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        return False
 
     ok = proc.returncode == 0 and os.path.exists(output_path)
     if not ok:

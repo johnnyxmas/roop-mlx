@@ -56,6 +56,10 @@ _COREML_MODELS = {
 # worst pixel, mean 0.2 levels), the same league as GPEN-512's 69.1 dB, which
 # has always run on the interpreter.  See test_gfpgan_interpreter_parity.
 #
+# 2026-11-05 (M5 Pro, mlx 0.32.4): separable bilinear Resize took it to
+# ~152 ms (2x CoreML), and turning off winograd conv (onnx_loader.py) took
+# its parity from 74 dB to 135 dB on a real photo — effectively exact fp32.
+#
 # SpecializationStrategy=FastPrediction (which FaceFusion sets) was A/B'd
 # across all 19 models the same day: neutral everywhere and actively worse on
 # 2d106det (0.62 -> 1.35 ms).  Deliberately not set.

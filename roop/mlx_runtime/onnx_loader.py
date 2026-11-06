@@ -19,14 +19,25 @@ Supported ops (sufficient for YOLO, InSwapper, w600k_r50, 2d106det):
 
 from __future__ import annotations
 
+import os
 import threading
 from typing import Any
 
-import mlx.core as mx
-import mlx.nn as mlx_nn
-import numpy as np
-import onnx
-from onnx import TensorProto, numpy_helper
+# Winograd conv2d off, unless the user set it.  On M5 (GPU neural
+# accelerators) MLX's winograd path runs fp32 3x3 convs at TF32 precision,
+# and the transforms amplify the rounding (MLX PR #4242, closed unmerged).
+# Measured 2026-11-05 on M5 Pro, mlx 0.32.4: every interpreter-routed model
+# goes from ~70 dB to ~130 dB vs the ORT CPU reference (i.e. true fp32) at
+# neutral speed (GPEN-2048 551 -> 532 ms, GPEN-512 142 -> 146, xseg 11.2 ->
+# 11.4).  MLX reads the switch lazily, so this works even if mlx was
+# imported first; set before the import anyway.
+os.environ.setdefault("MLX_CONV_WINOGRAD", "0")
+
+import mlx.core as mx  # noqa: E402
+import mlx.nn as mlx_nn  # noqa: E402
+import numpy as np  # noqa: E402
+import onnx  # noqa: E402
+from onnx import TensorProto, numpy_helper  # noqa: E402
 
 
 # Serializes all MLX inference across worker threads.  The GPU executes
@@ -837,26 +848,24 @@ class OnnxMLXSession:
             return mx.take(mx.take(x_nhwc, mx.clip(y_idx, 0, h - 1), axis=1),
                            mx.clip(x_idx, 0, w - 1), axis=2)
 
-        # Bilinear: half-pixel coordinate transform
-        y_src = (mx.arange(out_h, dtype=mx.float32) + 0.5) * (h / out_h) - 0.5
-        x_src = (mx.arange(out_w, dtype=mx.float32) + 0.5) * (w / out_w) - 0.5
-        y_src = mx.clip(y_src, 0.0, h - 1.0)
-        x_src = mx.clip(x_src, 0.0, w - 1.0)
+        # Bilinear, half-pixel coordinate transform.  Separable: interpolate
+        # rows first, then columns of that result.  Same maths as blending the
+        # four corners at once, but 4 gathers and 2 blends instead of 8 and 4,
+        # and the column pass runs on the height-resized (not full) tensor —
+        # GFPGAN 212 -> 148 ms end to end (42 Resize nodes), parity unchanged.
+        def _axis(out_n: int, n: int):
+            src = (mx.arange(out_n, dtype=mx.float32) + 0.5) * (n / out_n) - 0.5
+            src = mx.clip(src, 0.0, n - 1.0)
+            i0 = mx.floor(src).astype(mx.int32)
+            return i0, mx.minimum(i0 + 1, n - 1), src - i0.astype(mx.float32)
 
-        y0 = mx.floor(y_src).astype(mx.int32)
-        x0 = mx.floor(x_src).astype(mx.int32)
-        y1 = mx.minimum(y0 + 1, h - 1)
-        x1 = mx.minimum(x0 + 1, w - 1)
+        y0, y1, fy = _axis(out_h, h)
+        x0, x1, fx = _axis(out_w, w)
 
-        fy = (y_src - y0.astype(mx.float32)).reshape(1, -1, 1, 1)
-        fx = (x_src - x0.astype(mx.float32)).reshape(1, 1, -1, 1)
-
-        tl = mx.take(mx.take(x_nhwc, y0, axis=1), x0, axis=2)
-        tr = mx.take(mx.take(x_nhwc, y0, axis=1), x1, axis=2)
-        bl = mx.take(mx.take(x_nhwc, y1, axis=1), x0, axis=2)
-        br = mx.take(mx.take(x_nhwc, y1, axis=1), x1, axis=2)
-
-        return tl * (1 - fy) * (1 - fx) + tr * (1 - fy) * fx + bl * fy * (1 - fx) + br * fy * fx
+        top = mx.take(x_nhwc, y0, axis=1)
+        rows = top + (mx.take(x_nhwc, y1, axis=1) - top) * fy.reshape(1, -1, 1, 1)
+        left = mx.take(rows, x0, axis=2)
+        return left + (mx.take(rows, x1, axis=2) - left) * fx.reshape(1, 1, -1, 1)
 
     def _op_pad(self, node, values):
         x = self._v(values, node.input[0])
@@ -881,8 +890,16 @@ class OnnxMLXSession:
         pad_width = [(pads[i], pads[i + ndim]) for i in range(ndim)]
         if mode == "constant":
             values[node.output[0]] = mx.pad(x, pad_width, constant_values=const_val)
-        else:
+        elif mode == "reflect":
             values[node.output[0]] = self._reflect_pad(x, pad_width)
+        elif mode == "edge":
+            # Replicate the border value.  Used to fall through to reflect,
+            # which mirrors the pixel one step in instead — DeOldify's
+            # ReplicationPad+AvgPool blur then drifted up to 17/255 per
+            # channel from the ONNX reference.
+            values[node.output[0]] = mx.pad(x, pad_width, mode="edge")
+        else:
+            raise NotImplementedError(f"Pad mode '{mode}' is not implemented")
 
     def _op_transpose(self, node, values):
         x    = self._v(values, node.input[0])
@@ -1023,6 +1040,12 @@ class OnnxMLXSession:
             fill_val = 0.0
             dtype = mx.float32
         values[node.output[0]] = mx.full(shape, fill_val, dtype=dtype)
+
+    def _op_range(self, node, values):
+        start = float(self._v(values, node.input[0]))
+        limit = float(self._v(values, node.input[1]))
+        delta = float(self._v(values, node.input[2]))
+        values[node.output[0]] = mx.arange(start, limit, delta, dtype=mx.float32)
 
     def _op_tile(self, node, values):
         x       = self._v(values, node.input[0])

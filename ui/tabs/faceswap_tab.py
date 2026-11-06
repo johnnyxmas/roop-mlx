@@ -22,6 +22,18 @@ def _fpath(f) -> str:
     return f.path if hasattr(f, "path") else str(f)
 
 
+def _selected_target_path(files) -> str:
+    """Path of the selected target as it will be processed.
+
+    A re-encode swaps the entry's file for the converted one while the Gradio
+    file list keeps the original upload; frame numbers only line up with the
+    converted file (a lower FPS has fewer frames).
+    """
+    if 0 <= selected_preview_index < len(list_files_process):
+        return list_files_process[selected_preview_index].filename
+    return _fpath(files[selected_preview_index])
+
+
 IS_INPUT = True
 SELECTED_FACE_INDEX = 0
 SELECTION_FACES_DATA = []
@@ -36,7 +48,15 @@ previewimage = None
 
 selected_preview_index = 0
 
-is_processing = False
+# Swap worker thread. "Running" is derived from its liveness rather than a
+# flag: the Stop button cancels start_swap mid-yield, so any reset placed after
+# the worker loop never executes.
+_swap_thread = None
+
+
+def _swap_running():
+    return _swap_thread is not None and _swap_thread.is_alive()
+
 
 list_files_process: list[ProcessEntry] = []
 model_swap_choices = [
@@ -113,12 +133,24 @@ def _conversion_button_states():
     return size_states + [gr.update(interactive=is_video)]
 
 
+# The trailing entry is the Stop-conversion button, enabled only while converting.
 def _lock_for_convert():
-    return [gr.update(interactive=False)] * (3 + len(_RES_TIERS) + 1)
+    return [gr.update(interactive=False)] * (3 + len(_RES_TIERS) + 1) + [gr.update(interactive=True)]
 
 
 def _unlock_after_convert():
-    return [gr.update(interactive=True)] * 3 + _conversion_button_states()
+    return (
+        [gr.update(interactive=True)] * 3
+        + _conversion_button_states()
+        + [gr.update(interactive=False)]
+    )
+
+
+def on_stop_convert():
+    import roop.util_ffmpeg as ffmpeg
+
+    if ffmpeg.cancel_scale_video():
+        gr.Info("Stopping re-encode...")
 
 
 def _on_convert_480(fps, progress=gr.Progress()):
@@ -148,8 +180,8 @@ def on_convert_target_resolution(resolution, fps=0, progress=gr.Progress()):
 
     noop = (gr.update(), gr.update(), gr.update())
     try:
-        if is_processing:
-            gr.Warning("Cannot re-encode while a swap is running.")
+        if _swap_running():
+            gr.Warning("Cannot re-encode while a swap is running (or still stopping).")
             return noop
         if not list_files_process or selected_preview_index >= len(list_files_process):
             gr.Warning("Load a target video first.")
@@ -193,6 +225,9 @@ def on_convert_target_resolution(resolution, fps=0, progress=gr.Progress()):
             src, out, height, fps_val,
             on_progress=lambda frac: progress(frac, desc=_desc),
         )
+        if ffmpeg.scale_video_cancelled():
+            gr.Info("Re-encode stopped — target unchanged.")
+            return noop
         if not ok or not os.path.exists(out):
             gr.Warning("Video re-encode failed — target unchanged.")
             return noop
@@ -380,6 +415,10 @@ def faceswap_tab():
                     )
                     bt_conv_fps = gr.Button(
                         "Change FPS (keep size)", variant="secondary", size="sm",
+                        interactive=False, scale=1,
+                    )
+                    bt_conv_stop = gr.Button(
+                        "⏹ Stop", variant="stop", size="sm",
                         interactive=False, scale=1,
                     )
                 with gr.Row(variant="panel"):
@@ -702,7 +741,9 @@ def faceswap_tab():
         fn=on_clear_destfiles, outputs=[target_faces, selected_face_detection, target_file_info]
     ).then(fn=_conversion_button_states, outputs=_conversion_buttons)
 
-    _convert_lockables = [bt_start, bt_srcfiles, bt_destfiles] + _conversion_buttons
+    _convert_lockables = [bt_start, bt_srcfiles, bt_destfiles] + _conversion_buttons + [bt_conv_stop]
+    # Unqueued so it runs while the conversion itself holds the queue.
+    bt_conv_stop.click(fn=on_stop_convert, queue=False)
     for _btn, _conv_fn in (
         (bt_conv_480, _on_convert_480),
         (bt_conv_720, _on_convert_720),
@@ -878,7 +919,8 @@ def on_mask_blur_changed(mask_offset):
 
 def set_mask_offset(index, mask_offset):
     if len(roop.globals.INPUT_FACESETS) > SELECTED_INPUT_FACE_INDEX:
-        offs = (
+        # Faces store their offsets as a tuple; edit a copy and store it back.
+        offs = list(
             roop.globals.INPUT_FACESETS[SELECTED_INPUT_FACE_INDEX].faces[0].mask_offsets
         )
         offs[index] = mask_offset
@@ -890,7 +932,7 @@ def set_mask_offset(index, mask_offset):
             offs[3] = 0.0
         roop.globals.INPUT_FACESETS[SELECTED_INPUT_FACE_INDEX].faces[
             0
-        ].mask_offsets = offs
+        ].mask_offsets = tuple(offs)
 
 
 def on_swap_model_changed(swap_model, current_upscale):
@@ -1047,7 +1089,7 @@ def on_use_face_from_selected(files, frame_num):
     SELECTED_FACE_INDEX = 0
     thumbs = []
 
-    roop.globals.target_path = _fpath(files[selected_preview_index])
+    roop.globals.target_path = _selected_target_path(files)
     if util.is_image(
         roop.globals.target_path
     ) and not roop.globals.target_path.lower().endswith(("gif")):
@@ -1176,7 +1218,7 @@ def on_preview_frame_changed(
     if files is None or selected_preview_index >= len(files) or frame_num is None:
         return None, None, gr.Slider(info=timeinfo)
 
-    filename = _fpath(files[selected_preview_index])
+    filename = _selected_target_path(files)
     if util.is_video(filename) or filename.lower().endswith("gif"):
         current_frame = get_video_frame(filename, frame_num)
         if current_video_fps == 0:
@@ -1256,10 +1298,15 @@ def map_mask_engine(selected_mask_engine, clip_text):
 def on_toggle_masking(previewimage, mask):
     global manual_masking
 
+    if not manual_masking and previewimage is None:
+        gr.Warning("Show a preview frame first, then draw the mask on it.")
+        return gr.Image(visible=True), gr.ImageEditor(visible=False)
+
     manual_masking = not manual_masking
     if manual_masking:
-        layers = mask["layers"]
-        if len(layers) == 1:
+        # The editor passes None until it has held a value.
+        layers = (mask or {}).get("layers") or []
+        if len(layers) <= 1:
             layers = [create_blank_image(previewimage.shape[1], previewimage.shape[0])]
         return gr.Image(visible=False), gr.ImageEditor(
             value={"background": previewimage, "layers": layers, "composite": None},
@@ -1293,7 +1340,7 @@ def on_preview_mask(swap_model, frame_num, files, clip_text, mask_engine):
     from roop.core import live_swap, get_processing_plugins
 
     if (
-        is_processing
+        _swap_running()
         or files is None
         or selected_preview_index >= len(files)
         or clip_text is None
@@ -1301,7 +1348,7 @@ def on_preview_mask(swap_model, frame_num, files, clip_text, mask_engine):
     ):
         return None
 
-    filename = _fpath(files[selected_preview_index])
+    filename = _selected_target_path(files)
     if util.is_video(filename) or filename.lower().endswith("gif"):
         current_frame = get_video_frame(filename, frame_num)
     else:
@@ -1353,7 +1400,7 @@ def test_all_swappers(
     if files is None or len(files) < 1 or frame_num is None:
         return None
 
-    filename = _fpath(files[selected_preview_index])
+    filename = _selected_target_path(files)
     if util.is_video(filename) or filename.lower().endswith("gif"):
         current_frame = get_video_frame(filename, frame_num)
     else:
@@ -1493,7 +1540,7 @@ def start_swap(
     from ui.main import prepare_environment
     from roop.core import batch_process_regular
 
-    global is_processing
+    global _swap_thread
 
     idle_html = _format_status_html({"active": False})
 
@@ -1530,18 +1577,11 @@ def start_swap(
             yield gr.Button(variant="primary"), None, None, idle_html
             return
 
-    is_processing = True
     roop.globals.progress_status.update({
         "percent": 0, "fps": 0.0, "eta_seconds": 0,
         "current_frame": 0, "total_frames": 0,
         "start_time": time.time(), "active": True,
     })
-    yield (
-        gr.Button(variant="secondary", interactive=False),
-        gr.Button(variant="primary", interactive=True),
-        None,
-        _format_status_html(roop.globals.progress_status),
-    )
     roop.globals.execution_threads = roop.globals.CFG.max_threads
     roop.globals.video_encoder = roop.globals.CFG.output_video_codec
     roop.globals.video_quality = roop.globals.CFG.video_quality
@@ -1570,7 +1610,14 @@ def start_swap(
             worker_exc.append(e)
 
     t = threading.Thread(target=_worker, daemon=True)
+    _swap_thread = t
     t.start()
+    yield (
+        gr.Button(variant="secondary", interactive=False),
+        gr.Button(variant="primary", interactive=True),
+        None,
+        _format_status_html(roop.globals.progress_status),
+    )
 
     while t.is_alive():
         t.join(timeout=0.5)
@@ -1581,7 +1628,6 @@ def start_swap(
             _format_status_html(roop.globals.progress_status),
         )
 
-    is_processing = False
     roop.globals.progress_status["active"] = False
 
     if worker_exc:
