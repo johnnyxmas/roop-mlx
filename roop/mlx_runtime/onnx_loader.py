@@ -890,8 +890,16 @@ class OnnxMLXSession:
         pad_width = [(pads[i], pads[i + ndim]) for i in range(ndim)]
         if mode == "constant":
             values[node.output[0]] = mx.pad(x, pad_width, constant_values=const_val)
-        else:
+        elif mode == "reflect":
             values[node.output[0]] = self._reflect_pad(x, pad_width)
+        elif mode == "edge":
+            # Replicate the border value.  Used to fall through to reflect,
+            # which mirrors the pixel one step in instead — DeOldify's
+            # ReplicationPad+AvgPool blur then drifted up to 17/255 per
+            # channel from the ONNX reference.
+            values[node.output[0]] = mx.pad(x, pad_width, mode="edge")
+        else:
+            raise NotImplementedError(f"Pad mode '{mode}' is not implemented")
 
     def _op_transpose(self, node, values):
         x    = self._v(values, node.input[0])
