@@ -105,6 +105,7 @@ class FaceTracker:
             from roop.face_detector import FaceCompat
             f = FaceCompat()
             f.det_score = prev_face.det_score
+            f.rotation = getattr(prev_face, "rotation", 0)
 
             # Shift bbox
             old_bbox = prev_face.bbox.copy()

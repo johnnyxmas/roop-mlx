@@ -770,6 +770,20 @@ class ProcessMgr:
         return num_faces_found, temp_frame
 
     def rotation_action(self, original_face: Face, frame: Frame):
+        # The detector records which 90-degree turn made this face upright
+        # (face_detector.ROLL_RETRY_DEG); that is measured from the face
+        # itself, so use it.  The heuristic below (bbox wider than tall, then
+        # forehead vs chin landmark) can flip from frame to frame on a
+        # near-square box and was fed collapsed 106-point landmarks until
+        # 2026-11-05, so it effectively picked a random direction.
+        rotation = getattr(original_face, "rotation", None)
+        if rotation == 90:
+            return "rotate_clockwise"
+        if rotation == -90:
+            return "rotate_anticlockwise"
+        if rotation is not None:
+            return None
+
         (height, width) = frame.shape[:2]
 
         bounding_box_width = original_face.bbox[2] - original_face.bbox[0]
