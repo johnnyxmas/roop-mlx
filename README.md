@@ -1,14 +1,16 @@
 # roop-mlx
 
 Face swap images and video without training, tuned for Apple Silicon: a hybrid
-inference engine (Apple CoreML + MLX), hardware video decode/encode via
+inference engine (Apple Core AI + CoreML + MLX), hardware video decode/encode via
 VideoToolbox, and a browser-based GUI. Apple Silicon (arm64 macOS) only.
 
 [Installation](#installation) • [Usage](#usage) • [Engine](#engine) • [Changelog](CHANGELOG.md)
 
 > On first run, models (~2 GB) are downloaded automatically to `models/`.
 > The first launch also compiles the CoreML models (a few seconds each,
-> cached on disk in `models/*/coreml_cache/` afterwards).
+> cached on disk in `models/*/coreml_cache/` afterwards). On macOS 27+, the
+> first use of each Core AI-routed model converts it (~5-10 s, cached in
+> `models/*/coreai_cache/`).
 
 ---
 
@@ -135,11 +137,20 @@ numerical parity against the ONNX reference implementation:
 | Workload | Backend |
 | --- | --- |
 | Face detection (YOLOv8n-Face), recognition (ArcFace), landmarks, gender/age | CoreML (ANE/GPU) |
-| Swap models: inswapper, ReSwapper, HyperSwap | CoreML |
-| Enhancers: GFPGAN, CodeFormer, RestoreFormer++ | CoreML |
+| Swap models: HyperSwap 1A/1B/1C | Core AI (macOS 27+), else CoreML |
+| Swap models: inswapper, ReSwapper, AlphaFace | CoreML |
+| Enhancers: GFPGAN, GPEN 512/1024/2048 | Core AI (macOS 27+), else MLX graph interpreter |
+| Enhancers: CodeFormer, RestoreFormer++ | CoreML |
 | Upscaler: SPAN ×4 | CoreML |
-| GPEN, XSeg, DeOldify, ISNet, Real-ESRGAN ×2 | MLX graph interpreter |
+| XSeg, DeOldify, ISNet, Real-ESRGAN ×2 | MLX graph interpreter |
 | Video decode / encode | VideoToolbox hardware |
+
+Core AI is Apple's macOS 27 inference framework; it runs HyperSwap 1.33×,
+GFPGAN 1.84× and GPEN 1.33-1.69× faster than the previous backend at equal
+accuracy (M5 Pro). Each model is converted to `.aimodel` on first use with
+[coreai-onnx](https://github.com/devin-lai/coreai-onnx), and called through a
+small Swift bridge (`roop/coreai/`, shipped prebuilt). Anything that fails
+falls back to the previous backend; `ROOP_DISABLE_COREAI=1` turns it off.
 
 If `onnxruntime` is unavailable, everything falls back to the in-repo
 ONNX-to-MLX interpreter.
