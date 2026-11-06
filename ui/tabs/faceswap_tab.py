@@ -1297,10 +1297,15 @@ def map_mask_engine(selected_mask_engine, clip_text):
 def on_toggle_masking(previewimage, mask):
     global manual_masking
 
+    if not manual_masking and previewimage is None:
+        gr.Warning("Show a preview frame first, then draw the mask on it.")
+        return gr.Image(visible=True), gr.ImageEditor(visible=False)
+
     manual_masking = not manual_masking
     if manual_masking:
-        layers = mask["layers"]
-        if len(layers) == 1:
+        # The editor passes None until it has held a value.
+        layers = (mask or {}).get("layers") or []
+        if len(layers) <= 1:
             layers = [create_blank_image(previewimage.shape[1], previewimage.shape[0])]
         return gr.Image(visible=False), gr.ImageEditor(
             value={"background": previewimage, "layers": layers, "composite": None},
