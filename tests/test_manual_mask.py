@@ -55,3 +55,19 @@ def test_mask_offsets_clamp_opposite_edges(tab, one_face):
     tab.on_mask_left_changed(0.7)
     tab.on_mask_right_changed(0.5)          # left + right > 0.99
     assert one_face.mask_offsets[2:4] == (0.99, 0.0)
+
+
+def test_selecting_new_video_keeps_frame_slider_in_range(tab, monkeypatch):
+    """Regression: a freshly loaded video has startframe 0 ("from the
+    start"), which on_destfiles_selected put straight into the 1-based frame
+    slider; Gradio then rejected it ("Value 0 is less than minimum value 1")."""
+    from roop.ProcessEntry import ProcessEntry
+    monkeypatch.setattr(tab.util, "is_video", lambda f: True)
+    monkeypatch.setattr(tab, "get_video_frame_total", lambda f: 120)
+    monkeypatch.setattr(tab.util, "detect_fps", lambda f: 30.0)
+    monkeypatch.setattr(tab, "get_target_file_info_html", lambda f: "")
+    tab.list_files_process.clear()
+    tab.list_files_process.append(ProcessEntry("clip.mp4", 0, 0, 0))
+    tab.selected_preview_index = 0
+    slider = tab.on_destfiles_selected(None)[0]
+    assert slider.value >= 1   # the real slider's minimum (line ~471)

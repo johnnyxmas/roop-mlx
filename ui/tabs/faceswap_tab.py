@@ -1790,7 +1790,10 @@ def on_destfiles_selected(evt: gr.SelectData):
     if total_frames > 1:
         return (
             gr.Slider(
-                value=list_files_process[idx].startframe,
+                # startframe 0 means "from the beginning"; the slider is
+                # 1-based (minimum 1), and Gradio rejects an out-of-range
+                # value on the next event that sends it.
+                value=max(1, list_files_process[idx].startframe),
                 maximum=max(2, total_frames),
                 info="0:00:00",
             ),
