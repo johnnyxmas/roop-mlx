@@ -1,9 +1,8 @@
-"""Model download registry for the MLX fork.
+"""Model download registry.
 
-The list of remote model URLs is preserved so the existing pre_check()
-download step still works.  The FP16 ONNX conversion that the upstream
-repo ran at startup is gone -- MLX consumes its own weight format and
-will need a per-model converter when each processor is ported.
+Lists every model the app can load (remote URLs, grouped by directory), the
+downloader behind pre_check(), the stale-model sweep for retired files, and
+the one-time integrity check for truncated downloads.
 """
 
 import os
