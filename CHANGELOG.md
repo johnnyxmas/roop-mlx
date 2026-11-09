@@ -1,5 +1,49 @@
 # Changelog
 
+## v5.0 — 2026-11-09
+
+roop-mlx is now an Apple Silicon–only fork: a hybrid inference engine (Apple Core AI, onnxruntime CoreML, and an in-repo ONNX→MLX interpreter) replaces the CUDA/TensorRT path. Note: there was no released 4.6 — those swap-model additions are already in v4.5 below — so this entry covers everything since v4.5.
+
+### Inference engine
+- **Apple Core AI backend (macOS 27+)**: HyperSwap, GFPGAN and GPEN run through a Swift C-ABI bridge (`libcoreai_bridge.dylib`), with models converted to `.aimodel` on first use and cached. Benchmarked 1.33x (HyperSwap), 1.84x (GFPGAN) and 1.33x (GPEN) over the previous path. `ROOP_DISABLE_COREAI=1` disables it
+- Per-model backend routing (`create_session()`): Core AI, then onnxruntime CoreML, then the MLX interpreter, chosen by benchmarked speed and numerical parity; every failure falls through to the next backend
+- ONNX→MLX graph interpreter replaces CUDA/ONNX Runtime GPU paths; all processors (InSwapper, HyperSwap, GFPGAN, CodeFormer, GPEN, RestoreFormer++, XSeg, Colorizer, Upscale, Masking) ported to MLX
+- onnxruntime CoreML execution provider (ANE/GPU) for the detector stack, large enhancers and swap models; dynamic ONNX dims are rewritten to static sizes to avoid silent CPU fallback
+- Interpreter speedups: separable bilinear Resize, Winograd off, true fp32 convs, attribute cache and weight pre-transpose (GFPGAN ~30% faster)
+- Interpreter fixes: ONNX edge padding (DeOldify colour drift), opset-10 Resize, `Range` op
+- Serialized CoreML compiles; poisoned/unloadable compile caches self-heal instead of wiping other models' caches; orphan cache growth fixed
+- Verified on onnxruntime 1.30; dependencies modernised (OpenCV 5, onnxruntime 1.28+)
+
+### Models
+- Added SPAN x4 upscaler (512px tiles), replacing Real-ESRGAN x4 and LSDIR x4
+- Added AlphaFace 256 swapper
+- Added source identity weight (ported from FaceFusion's `face_swapper_weight`)
+- Clip2Seg text masking ported to ONNX CLIPSeg (torch `clip` package dropped)
+- Subsample-upscale dropdown gated to the swap model's native size
+- Retired InSwapperNative / pixel-boost batch path, DMDNet, YOLO face detector (InsightFace buffalo_l restored on CoreML/ANE)
+- `verify_all_models()` integrity sweep at startup catches truncated or corrupt downloads
+
+### Detection and video
+- Rotated/horizontal faces are now detected (rotation-retry detector) and 106-point landmarks no longer collapse; faceless frames cost ~16.5 ms
+- Hardware video decode/encode via VideoToolbox; end-to-end BT.709 colour tagging
+- Fixed diagonal output shear (stride desync) with a guard on frames fed to the raw bgr24 writer
+- Fixed frame extraction on ffmpeg 9 (`-vsync` removed)
+- Video downscale/re-encode buttons (480/720/1080/2160p + FPS) via `scale_video()`
+- Opt-in re-encode for browser-unplayable output previews; preview now shows the converted target
+- Stop button for target re-encodes; fixed stuck swap lock after Stop and FPS override truncating video
+
+### UI and fixes
+- Gradio 5 → 6 migration; dark theme rework; settings tooltips
+- Fixed frame slider rejecting a newly selected video
+- Fixed manual-mask toggle and mask sliders crashing (tuple offsets)
+- Local-folder add now skips hidden files
+- Fixed `rlim_t` overflow on macOS
+
+### Project
+- Dependencies managed with uv (`pyproject.toml` + `uv.lock`); `requirements*.txt` are generated exports
+- Added regression test suite (swap/interpreter parity, routing, compositing, video pipeline), macOS ARM CI, Dependabot, and CLAUDE.md
+- README rewritten as a standalone roop-mlx project
+
 ## v4.5 — 2026-04-12
 
 - Major speed boost for video processing: CUDA OrtValue preallocation with per-thread io_binding eliminates repeated GPU buffer allocation across frames
