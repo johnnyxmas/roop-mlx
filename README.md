@@ -6,7 +6,7 @@ VideoToolbox, and a browser-based GUI. Apple Silicon (arm64 macOS) only.
 
 [Installation](#installation) • [Usage](#usage) • [Engine](#engine) • [Changelog](CHANGELOG.md)
 
-> On first run, models (~2 GB) are downloaded automatically to `models/`.
+> On first run, models (~7 GB) are downloaded automatically to `models/`.
 > The first launch also compiles the CoreML models (a few seconds each,
 > cached on disk in `models/*/coreml_cache/` afterwards). On macOS 27+, the
 > first use of each Core AI-routed model converts it (~5-10 s, cached in
@@ -46,16 +46,57 @@ This software is provided for authorized research, academic study, and lawful us
 
 **Do not apply this software to illegal or unethical scenarios.**
 
+## Why are you releasing something proven to be so controversial?
+
+As a lifelong ethical hacker, I've come to be keenly aware of the absolute criticality in not only putting the tools used by attackers into the hands of the defenders, but also making them easy enough for the defenders to leverage without a huge technical barrier to entry.
+
+Deepfakes / faceswapping are standard tradecraft for a huge percentage of high-stakes attacks these days, and thus it is critical that defenders be able to recreate them in-house for use in tabletop exercises, end-user training, and threat detection development. While plenty of tools exist for these purposes, practically none of them were FOSS, easy to use, and/or able to run on local inference. Local inference is of course critical for privacy, which in turn is of the utmost criticality when simulating these attacks, especially in corporate or political environments, etc.
+
+While, yes, this tool could be used to create nonconsensual simulations of third parties in NSFW situations, that cat is LONG out of the bag, and there are (to bo honest) far better tools out there for this. This tool serves as a mechanism for enabling the above, and is decidedly poor at producing the latter. Go be gross elsewhere, like perhaps the bottom of the ocean with no scuba gear. 
+
 ---
 
 ## Installation
 
 ### Prerequisites
 
-- **Apple Silicon Mac** (M1 / M2 / M3 / M4) running macOS 13.5 or newer
+**Hardware**
+
+- **Apple Silicon Mac** (M1 or later). Intel Macs and other platforms are not
+  supported: there is no CUDA or generic-CPU path
+- **16 GB of unified memory or more** is recommended. Memory use grows with the
+  thread count, the enhancer and the video resolution; the Max. Memory setting
+  can cap it
+- **~10 GB of free disk**: ~7 GB of models, plus the model caches (a few more GB
+  once the CoreML and Core AI caches fill) and temp space for extracted video
+  frames
+
+**Operating system**
+
+- **macOS 14 (Sonoma) or newer.** This is the floor for the MLX and
+  onnxruntime arm64 wheels
+- **macOS 27 or newer** enables the Apple Core AI backend (faster HyperSwap,
+  GFPGAN and GPEN). On older systems the app skips it automatically and uses
+  CoreML and MLX instead. Core AI needs no extra install; its Python packages
+  are pulled in by `uv sync` when the OS supports them
+
+**Software**
+
 - **[uv](https://docs.astral.sh/uv/)** — `brew install uv`. It installs the
   right Python (3.13, from `.python-version`) itself; 3.11 – 3.14 are supported
-- **ffmpeg** on your system PATH — `brew install ffmpeg` is the easy path
+- **ffmpeg** on your system PATH — `brew install ffmpeg`. Video decode, encode
+  and the Extras tab depend on it (VideoToolbox is used when available)
+- **A modern web browser** for the Gradio UI
+- **Internet access on first run** to download the models from Hugging Face
+- *Optional:* **[OBS Studio](https://obsproject.com/)**, required only to send live
+  webcam swaps to other apps (video calls, streaming). roop-mlx sends frames through
+  pyvirtualcam, whose only macOS backend is the *OBS Virtual Camera*, so OBS must
+  be installed and its virtual camera started once. Other apps then select
+  "OBS Virtual Camera" as their camera. Other virtual-webcam apps can't be output
+  targets, but they or a physical camera can still be the *input* in the Live Cam tab
+- *Optional:* **Xcode 27 or newer**, only to rebuild `libcoreai_bridge.dylib`
+  (`roop/coreai/build.sh`). The prebuilt library is committed, so you normally
+  don't need this
 
 ### Setup
 
