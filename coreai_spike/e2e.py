@@ -13,12 +13,12 @@ import onnxruntime as ort
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-sys.path.insert(0, "/Users/j0hnnyxm4s/Documents/GitHub/roop-mlx")
+sys.path.insert(0, os.path.dirname(HERE))
 from compare import make_inputs, score  # noqa: E402
 from coreai_session import CoreAISession  # noqa: E402
 from roop.inference import create_session  # noqa: E402
 
-M = "/Users/j0hnnyxm4s/Documents/GitHub/roop-mlx/models"
+M = os.path.join(os.path.dirname(HERE), "models")
 MODELS = [("hyperswap_1a_256", (-1, 1)), ("GFPGANv1.4", (-1, 1)),
           ("GPEN-BFR-512", (-1, 1)), ("inswapper_128", (0, 1))]
 if len(sys.argv) > 1:  # name:lo,hi ...

@@ -964,7 +964,7 @@ wheels = [
 
 [[package]]
 name = "roop-mlx"
-version = "4.5.0"
+version = "5.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "coreai-core", marker = "platform_release >= '25'" },

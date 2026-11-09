@@ -21,9 +21,9 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
-MAIN_REPO = "/Users/j0hnnyxm4s/Documents/GitHub/roop-mlx"
-sys.path.insert(0, MAIN_REPO)
 HERE = os.path.dirname(os.path.abspath(__file__))
+MAIN_REPO = os.path.dirname(HERE)
+sys.path.insert(0, MAIN_REPO)
 BENCH = os.path.join(HERE, "out", "coreai-bench")
 
 
