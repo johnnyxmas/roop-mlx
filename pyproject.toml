@@ -46,7 +46,7 @@ dependencies = [
 
     # -- ONNX: read-only loader so the MLX interpreter can pull weights out of
     # the .onnx files, plus coreai-onnx's converter input.
-    "onnx==1.22.0",
+    "onnx==1.23.2",
 
     # -- UI --
     # Both bounds below are gradio's own, not tighter guesses: gradio 6.x asks
