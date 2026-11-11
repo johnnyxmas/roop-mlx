@@ -23,7 +23,7 @@ certifi==2026.10.23 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     #   requests
 charset-normalizer==3.5.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via requests
-click==8.5.0 ; platform_machine == 'arm64' and sys_platform == 'darwin'
+click==8.5.1 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via
     #   huggingface-hub
     #   uvicorn
