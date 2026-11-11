@@ -213,7 +213,7 @@ rich==15.0.0 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via
     #   coreai-onnx
     #   typer
-safehttpx==0.1.7 ; platform_machine == 'arm64' and sys_platform == 'darwin'
+safehttpx==0.2.0 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via gradio
 scikit-image==0.26.0 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via roop-mlx
