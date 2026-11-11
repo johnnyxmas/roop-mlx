@@ -205,7 +205,7 @@ pyyaml==6.0.3 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     #   gradio
     #   huggingface-hub
     #   roop-mlx
-regex==2026.9.29 ; platform_machine == 'arm64' and sys_platform == 'darwin'
+regex==2026.11.7 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via roop-mlx
 requests==2.34.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via roop-mlx
