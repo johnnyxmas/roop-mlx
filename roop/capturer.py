@@ -1,5 +1,6 @@
 import contextlib
 import os
+import threading
 from typing import Optional
 import cv2
 import numpy as np
@@ -9,6 +10,8 @@ from roop.typing import Frame
 current_video_path = None
 current_frame_total = 0
 current_capture = None
+# Reentrant: get_video_frame -> _open_capture -> release_video re-acquires it.
+_capture_lock = threading.RLock()
 
 
 @contextlib.contextmanager
@@ -83,34 +86,40 @@ def _open_capture(video_path: str):
 
 
 def get_video_frame(video_path: str, frame_number: int = 0) -> Optional[Frame]:
-    if video_path != current_video_path:
-        _open_capture(video_path)
+    # Gradio runs each event (slider scrubbing fires many) in its own worker
+    # thread, all sharing current_capture.  Releasing/reopening an AVFoundation
+    # capture while another thread is inside read() frees the AVAssetReader
+    # under it and segfaults the whole process, so hold the lock throughout.
+    with _capture_lock:
+        if video_path != current_video_path:
+            _open_capture(video_path)
 
-    target = min(int(current_frame_total) - 1, max(0, frame_number - 1))
-    current_capture.set(cv2.CAP_PROP_POS_FRAMES, target)
-    has_frame, frame = current_capture.read()
-    if has_frame and frame is not None and frame.size > 0:
-        return frame
-
-    # Seek may have put the codec into a bad state (e.g. B-frame reference
-    # missing after a direct seek in H.264).  Reopen and retry once.
-    try:
-        _open_capture(video_path)
+        target = min(int(current_frame_total) - 1, max(0, frame_number - 1))
         current_capture.set(cv2.CAP_PROP_POS_FRAMES, target)
         has_frame, frame = current_capture.read()
         if has_frame and frame is not None and frame.size > 0:
             return frame
-    except Exception:
-        pass
-    return None
+
+        # Seek may have put the codec into a bad state (e.g. B-frame reference
+        # missing after a direct seek in H.264).  Reopen and retry once.
+        try:
+            _open_capture(video_path)
+            current_capture.set(cv2.CAP_PROP_POS_FRAMES, target)
+            has_frame, frame = current_capture.read()
+            if has_frame and frame is not None and frame.size > 0:
+                return frame
+        except Exception:
+            pass
+        return None
 
 
 def release_video():
     global current_capture
 
-    if current_capture is not None:
-        current_capture.release()
-        current_capture = None
+    with _capture_lock:
+        if current_capture is not None:
+            current_capture.release()
+            current_capture = None
 
 
 def get_video_frame_total(video_path: str) -> int:
