@@ -148,7 +148,7 @@ onnx==1.23.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via
     #   coreai-onnx
     #   roop-mlx
-onnxruntime==1.31.1 ; platform_machine == 'arm64' and sys_platform == 'darwin'
+onnxruntime==1.32.0 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via roop-mlx
 opencv-python-headless==5.0.0.93 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via roop-mlx
