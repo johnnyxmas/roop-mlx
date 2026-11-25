@@ -186,7 +186,7 @@ pydantic==2.14.3 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     #   fastapi
     #   gradio
     #   roop-mlx
-pydantic-core==2.50.4 ; platform_machine == 'arm64' and sys_platform == 'darwin'
+pydantic-core==2.50.5 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via pydantic
 pydub==0.25.1 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via gradio
