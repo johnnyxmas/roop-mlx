@@ -166,7 +166,7 @@ packaging==26.3 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     #   scikit-image
 pandas==3.1.1 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via gradio
-pillow==12.3.0 ; platform_machine == 'arm64' and sys_platform == 'darwin'
+pillow==13.0.0 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via
     #   coreai-core
     #   gradio
