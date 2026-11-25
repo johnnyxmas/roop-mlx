@@ -83,7 +83,7 @@ idna==3.20 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     #   httpx
     #   httpx2
     #   requests
-imageio==2.38.1 ; platform_machine == 'arm64' and sys_platform == 'darwin'
+imageio==2.38.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via scikit-image
 jinja2==3.1.6 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via gradio
